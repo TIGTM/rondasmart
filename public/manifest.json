@@ -1,0 +1,28 @@
+{
+  "name": "Ronda Smart",
+  "short_name": "RondaSmart",
+  "description": "Sistema inteligente para controle de rondas, vigilância e monitoramento em tempo real.",
+  "start_url": "/login",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0F172A",
+  "background_color": "#F8FAFC",
+  "categories": ["business", "security"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/mobile.svg",
+      "sizes": "390x844",
+      "type": "image/svg+xml",
+      "form_factor": "narrow"
+    }
+  ]
+}
