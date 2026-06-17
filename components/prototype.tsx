@@ -210,27 +210,54 @@ export function LoginPage() {
 
 function AdminLayout({ title, children }: { title: string; children: React.ReactNode }) {
   const pathname = usePathname();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const adminLinks = (
+    <nav className="mt-8 space-y-1">
+      {navAdmin.map((item) => {
+        const Icon = item.icon;
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={() => setMobileMenuOpen(false)}
+            className={cn("flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100", pathname === item.href && "bg-slate-950 text-white hover:bg-slate-950")}
+          >
+            <Icon size={18} />
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
   return (
     <div className="min-h-screen bg-slate-50">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-slate-200 bg-white p-5 lg:block">
         <Logo />
-        <nav className="mt-8 space-y-1">
-          {navAdmin.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link key={item.href} href={item.href} className={cn("flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100", pathname === item.href && "bg-slate-950 text-white hover:bg-slate-950")}>
-                <Icon size={18} />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+        {adminLinks}
       </aside>
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <button aria-label="Fechar menu" className="absolute inset-0 bg-slate-950/50" onClick={() => setMobileMenuOpen(false)} />
+          <aside className="relative h-full w-80 max-w-[86vw] border-r border-slate-200 bg-white p-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <Logo />
+              <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(false)} aria-label="Fechar menu">
+                <X size={20} />
+              </Button>
+            </div>
+            {adminLinks}
+            <Link href="/login" onClick={() => setMobileMenuOpen(false)} className="mt-6 flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-600">
+              <LogOut size={18} />
+              Sair
+            </Link>
+          </aside>
+        </div>
+      )}
       <div className="lg:pl-72">
         <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur md:px-7">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Button variant="ghost" size="icon" className="lg:hidden"><Menu size={18} /></Button>
+              <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setMobileMenuOpen(true)} aria-label="Abrir menu"><Menu size={18} /></Button>
               <div>
                 <p className="text-xs font-bold uppercase text-blue-600">Painel administrativo</p>
                 <h1 className="text-xl font-black tracking-tight md:text-2xl">{title}</h1>
