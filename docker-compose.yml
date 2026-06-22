@@ -1,4 +1,20 @@
 services:
+  ronda-smart-db:
+    image: postgres:16-alpine
+    container_name: ronda-smart-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rondasmart
+      POSTGRES_USER: ronda
+      POSTGRES_PASSWORD: ronda_change_me
+    volumes:
+      - ronda-smart-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ronda -d rondasmart"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   ronda-smart:
     build:
       context: .
@@ -10,11 +26,19 @@ services:
       HOSTNAME: 0.0.0.0
       PORT: 3100
       NEXT_TELEMETRY_DISABLED: "1"
+      DATABASE_URL: postgres://ronda:ronda_change_me@ronda-smart-db:5432/rondasmart
+      SESSION_SECRET: change_this_secret_before_real_clients
     ports:
       - "3100:3100"
+    depends_on:
+      ronda-smart-db:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3100/login >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
+
+volumes:
+  ronda-smart-db:

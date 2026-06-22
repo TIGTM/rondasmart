@@ -138,11 +138,26 @@ export function LoginPage() {
   const { toast, show } = useToast();
   const [profile, setProfile] = useState<"admin" | "vigilante">("admin");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const email = profile === "admin" ? "admin@rondasmart.com.br" : "vigilante@rondasmart.com.br";
 
-  function enter() {
+  async function enter() {
     setLoading(true);
-    window.setTimeout(() => router.push(profile === "admin" ? "/admin/dashboard" : "/mobile/home"), 500);
+    setError("");
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password: "rondasmart-demo" })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Falha ao entrar.");
+      router.push(data.user.role === "GUARD" ? "/mobile/home" : "/admin/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao entrar.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -166,6 +181,7 @@ export function LoginPage() {
                 {loading ? <Loader2 className="animate-spin" size={18} /> : <Shield size={18} />}
                 Entrar
               </Button>
+              {error && <p className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-600">{error}</p>}
               <Button className="w-full" variant="outline" onClick={() => show({ title: "Instalacao pronta", text: "Use o menu do navegador para adicionar a Tela Inicial." })}>
                 <Smartphone size={18} />
                 Instalar App
@@ -327,9 +343,44 @@ function MockMap({ dark = false }: { dark?: boolean }) {
 }
 
 export function AdminDashboard() {
+  const [dashboard, setDashboard] = useState<{
+    kpis?: {
+      todayPatrols: number;
+      completedPatrols: number;
+      delayedPatrols: number;
+      incidents: number;
+      activeGuards: number;
+    };
+    activities?: Array<{ title: string; location: string; status: string }>;
+  } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/dashboard")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => setDashboard(data))
+      .catch(() => setDashboard(null));
+  }, []);
+
+  const dashboardKpis = kpis.map((item) => {
+    const values = dashboard?.kpis;
+    if (!values) return item;
+    const valueByLabel: Record<string, number> = {
+      "Rondas Hoje": values.todayPatrols,
+      Concluidas: values.completedPatrols,
+      Atrasadas: values.delayedPatrols,
+      Ocorrencias: values.incidents,
+      "Vigilantes Ativos": values.activeGuards
+    };
+    return { ...item, value: String(valueByLabel[item.label] ?? item.value), detail: "Dados do banco" };
+  });
+
+  const recentActivities = dashboard?.activities?.length
+    ? dashboard.activities.map((item) => `${item.title} - ${item.location ?? "Sem local"} (${item.status})`)
+    : atividades;
+
   return (
     <AdminLayout title="Dashboard">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">{kpis.map((item) => <KpiCard key={item.label} item={item} />)}</div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">{dashboardKpis.map((item) => <KpiCard key={item.label} item={item} />)}</div>
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.3fr_.7fr]">
         <Card>
           <CardHeader><h2 className="font-black">Rondas da semana</h2></CardHeader>
@@ -360,7 +411,7 @@ export function AdminDashboard() {
         </Card>
         <Card>
           <CardHeader><h2 className="font-black">Ultimas atividades</h2></CardHeader>
-          <CardContent className="space-y-3">{atividades.map((activity) => <p key={activity} className="rounded-lg bg-slate-50 p-3 text-sm font-medium text-slate-600">{activity}</p>)}</CardContent>
+          <CardContent className="space-y-3">{recentActivities.map((activity) => <p key={activity} className="rounded-lg bg-slate-50 p-3 text-sm font-medium text-slate-600">{activity}</p>)}</CardContent>
         </Card>
         <Card>
           <CardHeader><h2 className="font-black">Mapa de pontos</h2></CardHeader>
@@ -396,10 +447,22 @@ function FormModal({ title, button, children }: { title: string; button: string;
 }
 
 export function CondominiosPage() {
+  const [dbCondominios, setDbCondominios] = useState<any[] | null>(null);
+  useEffect(() => {
+    fetch("/api/condominiums").then((r) => (r.ok ? r.json() : null)).then((d) => setDbCondominios(d?.condominiums ?? null)).catch(() => setDbCondominios(null));
+  }, []);
+  const rows = dbCondominios?.map((c) => ({
+    nome: c.name,
+    cidade: c.city,
+    bairro: c.district,
+    sindico: c.managerName,
+    vigilantes: c.guardsCount,
+    status: c.status
+  })) ?? condominios;
   return (
     <AdminLayout title="Condominios">
       <div className="mb-4 flex justify-end"><FormModal title="Novo condominio" button="Novo Condominio"><Input placeholder="Nome" /><Input placeholder="CNPJ" /><Input placeholder="Endereco" /><Input placeholder="Cidade" /><Input placeholder="Nome do sindico" /><Input placeholder="Telefone" /><Input placeholder="E-mail" /></FormModal></div>
-      <Card><Table headers={["Nome", "Cidade", "Bairro", "Sindico", "Vigilantes", "Status"]} rows={condominios.map((c) => [c.nome, c.cidade, c.bairro, c.sindico, c.vigilantes, <StatusBadge key={c.nome} status={c.status} />])} /></Card>
+      <Card><Table headers={["Nome", "Cidade", "Bairro", "Sindico", "Vigilantes", "Status"]} rows={rows.map((c) => [c.nome, c.cidade, c.bairro, c.sindico, c.vigilantes, <StatusBadge key={c.nome} status={c.status} />])} /></Card>
     </AdminLayout>
   );
 }
@@ -416,11 +479,23 @@ function Table({ headers, rows }: { headers: string[]; rows: React.ReactNode[][]
 }
 
 export function VigilantesPage() {
+  const [dbVigilantes, setDbVigilantes] = useState<any[] | null>(null);
+  useEffect(() => {
+    fetch("/api/guards").then((r) => (r.ok ? r.json() : null)).then((d) => setDbVigilantes(d?.guards ?? null)).catch(() => setDbVigilantes(null));
+  }, []);
+  const rows = dbVigilantes?.map((v, index) => ({
+    id: index + 1,
+    nome: v.name,
+    telefone: v.phone,
+    condominio: v.condominiumName,
+    turno: v.shift,
+    status: v.status
+  })) ?? vigilantes;
   return (
     <AdminLayout title="Vigilantes">
       <div className="mb-4 flex justify-end"><FormModal title="Cadastrar vigilante" button="Cadastrar Vigilante"><Input placeholder="Nome" /><Input placeholder="Telefone" /><Select><option>Condominio Jardim America</option></Select><Select><option>07:00 - 19:00</option><option>19:00 - 07:00</option></Select></FormModal></div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {vigilantes.map((v) => <Card key={v.nome}><CardContent><div className="flex items-center gap-4"><div className="grid h-12 w-12 place-items-center rounded-full bg-slate-950 font-black text-white">{v.nome.split(" ").map((p) => p[0]).slice(0, 2)}</div><div className="flex-1"><p className="font-black">{v.nome}</p><p className="text-sm text-slate-500">{v.condominio}</p></div><StatusBadge status={v.status} /></div><div className="mt-4 grid gap-2 text-sm text-slate-500"><span className="flex gap-2"><Phone size={16} />{v.telefone}</span><span className="flex gap-2"><Radio size={16} />{v.turno}</span></div></CardContent></Card>)}
+        {rows.map((v) => <Card key={v.nome}><CardContent><div className="flex items-center gap-4"><div className="grid h-12 w-12 place-items-center rounded-full bg-slate-950 font-black text-white">{v.nome.split(" ").map((p: string) => p[0]).slice(0, 2)}</div><div className="flex-1"><p className="font-black">{v.nome}</p><p className="text-sm text-slate-500">{v.condominio}</p></div><StatusBadge status={v.status} /></div><div className="mt-4 grid gap-2 text-sm text-slate-500"><span className="flex gap-2"><Phone size={16} />{v.telefone}</span><span className="flex gap-2"><Radio size={16} />{v.turno}</span></div></CardContent></Card>)}
       </div>
     </AdminLayout>
   );
@@ -450,10 +525,21 @@ function QRPattern({ code = "RS-001", large = false }: { code?: string; large?: 
 
 export function PontosPage() {
   const [selectedQr, setSelectedQr] = useState<(typeof pontos)[number] | null>(null);
+  const [dbPontos, setDbPontos] = useState<any[] | null>(null);
+  useEffect(() => {
+    fetch("/api/checkpoints").then((r) => (r.ok ? r.json() : null)).then((d) => setDbPontos(d?.checkpoints ?? null)).catch(() => setDbPontos(null));
+  }, []);
+  const rows = dbPontos?.map((p) => ({
+    nome: p.name,
+    localizacao: p.location,
+    status: p.status,
+    ultimaVisita: p.lastVisitAt ? new Date(p.lastVisitAt).toLocaleString("pt-BR") : "Sem visita",
+    codigo: p.qrToken
+  })) ?? pontos;
   return (
     <AdminLayout title="Pontos de ronda">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {pontos.map((p) => <Card key={p.nome}><CardContent><div className="flex gap-4"><QRPattern code={p.codigo} /><div className="flex-1"><p className="font-black">{p.nome}</p><p className="text-sm text-slate-500">{p.localizacao}</p><div className="mt-3"><StatusBadge status={p.status} /></div><p className="mt-2 text-xs font-semibold text-slate-400">Ultima visita: {p.ultimaVisita}</p><p className="mt-1 text-xs font-black text-blue-600">{p.codigo}</p></div></div><div className="mt-4 flex gap-2"><Button variant="outline" className="flex-1" onClick={() => setSelectedQr(p)}>Ver detalhes</Button><Button className="flex-1" onClick={() => setSelectedQr(p)}><QrCode size={16} />Gerar QR</Button></div></CardContent></Card>)}
+        {rows.map((p) => <Card key={p.nome}><CardContent><div className="flex gap-4"><QRPattern code={p.codigo} /><div className="flex-1"><p className="font-black">{p.nome}</p><p className="text-sm text-slate-500">{p.localizacao}</p><div className="mt-3"><StatusBadge status={p.status} /></div><p className="mt-2 text-xs font-semibold text-slate-400">Ultima visita: {p.ultimaVisita}</p><p className="mt-1 text-xs font-black text-blue-600">{p.codigo}</p></div></div><div className="mt-4 flex gap-2"><Button variant="outline" className="flex-1" onClick={() => setSelectedQr(p)}>Ver detalhes</Button><Button className="flex-1" onClick={() => setSelectedQr(p)}><QrCode size={16} />Gerar QR</Button></div></CardContent></Card>)}
       </div>
       {selectedQr && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4">
@@ -474,6 +560,21 @@ export function PontosPage() {
 }
 
 export function RondasPage() {
+  const [dbRondas, setDbRondas] = useState<any[] | null>(null);
+  useEffect(() => {
+    fetch("/api/patrols").then((r) => (r.ok ? r.json() : null)).then((d) => setDbRondas(d?.patrols ?? null)).catch(() => setDbRondas(null));
+  }, []);
+  const rows = dbRondas?.map((r) => ({
+    data: r.createdAt ? new Date(r.createdAt).toLocaleDateString("pt-BR") : "-",
+    vigilante: r.guardName ?? "-",
+    condominio: r.condominiumName,
+    ronda: r.name,
+    inicio: r.startedAt ? new Date(r.startedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "-",
+    fim: r.finishedAt ? new Date(r.finishedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "-",
+    pontos: String(r.completedCheckpoints ?? 0),
+    ocorrencias: 0,
+    status: r.status
+  })) ?? rondas.slice(0, 12);
   return (
     <AdminLayout title="Monitoramento de rondas">
       <Filters labels={["Condominio", "Vigilante", "Status", "Data"]} />
@@ -481,7 +582,7 @@ export function RondasPage() {
         <Card><CardHeader><h2 className="font-black">Timeline da ronda</h2></CardHeader><CardContent><Timeline items={timeline} /></CardContent></Card>
         <Card><CardHeader><h2 className="font-black">Tempo real simulado</h2></CardHeader><CardContent><MockMap /><div className="mt-4 grid gap-3 md:grid-cols-4"><MiniStat label="Vigilante" value="Joao" /><MiniStat label="Tempo" value="52 min" /><MiniStat label="Visitados" value="7" /><MiniStat label="Pendentes" value="3" /></div></CardContent></Card>
       </div>
-      <Card className="mt-5"><Table headers={["Data", "Vigilante", "Condominio", "Ronda", "Inicio", "Fim", "Pontos", "Ocorrencias", "Status"]} rows={rondas.slice(0, 12).map((r) => [r.data, r.vigilante, r.condominio, r.ronda, r.inicio, r.fim, r.pontos, r.ocorrencias, <StatusBadge key={r.ronda} status={r.status} />])} /></Card>
+      <Card className="mt-5"><Table headers={["Data", "Vigilante", "Condominio", "Ronda", "Inicio", "Fim", "Pontos", "Ocorrencias", "Status"]} rows={rows.map((r) => [r.data, r.vigilante, r.condominio, r.ronda, r.inicio, r.fim, r.pontos, r.ocorrencias, <StatusBadge key={r.ronda} status={r.status} />])} /></Card>
     </AdminLayout>
   );
 }
@@ -499,11 +600,24 @@ function Filters({ labels }: { labels: string[] }) {
 }
 
 export function OcorrenciasPage() {
+  const [dbOcorrencias, setDbOcorrencias] = useState<any[] | null>(null);
+  useEffect(() => {
+    fetch("/api/incidents").then((r) => (r.ok ? r.json() : null)).then((d) => setDbOcorrencias(d?.incidents ?? null)).catch(() => setDbOcorrencias(null));
+  }, []);
+  const rows = dbOcorrencias?.map((o) => ({
+    id: o.id,
+    tipo: o.type,
+    local: o.location,
+    descricao: o.description,
+    data: o.createdAt ? new Date(o.createdAt).toLocaleString("pt-BR") : "-",
+    responsavel: o.guardName ?? "-",
+    status: o.status
+  })) ?? ocorrencias;
   return (
     <AdminLayout title="Ocorrencias">
       <Filters labels={["Condominio", "Tipo", "Status", "Data"]} />
       <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {ocorrencias.map((o) => <Card key={o.id} className={o.tipo.includes("Emergencia") ? "border-red-200" : ""}><div className="h-36 rounded-t-lg bg-[linear-gradient(135deg,#e2e8f0,#f8fafc)]"><div className="flex h-full items-center justify-center text-slate-400"><Camera size={34} /></div></div><CardContent><div className="flex items-start justify-between gap-2"><h3 className="font-black">{o.tipo}</h3><StatusBadge status={o.status} /></div><p className="mt-2 text-sm text-slate-500">{o.descricao}</p><div className="mt-4 space-y-1 text-sm font-medium text-slate-600"><p>{o.local}</p><p>{o.data}</p><p>{o.responsavel}</p></div></CardContent></Card>)}
+        {rows.map((o) => <Card key={o.id} className={o.tipo.includes("Emergencia") ? "border-red-200" : ""}><div className="h-36 rounded-t-lg bg-[linear-gradient(135deg,#e2e8f0,#f8fafc)]"><div className="flex h-full items-center justify-center text-slate-400"><Camera size={34} /></div></div><CardContent><div className="flex items-start justify-between gap-2"><h3 className="font-black">{o.tipo}</h3><StatusBadge status={o.status} /></div><p className="mt-2 text-sm text-slate-500">{o.descricao}</p><div className="mt-4 space-y-1 text-sm font-medium text-slate-600"><p>{o.local}</p><p>{o.data}</p><p>{o.responsavel}</p></div></CardContent></Card>)}
       </div>
     </AdminLayout>
   );
@@ -620,11 +734,24 @@ function useCamera() {
 export function MobileScanner() {
   const { toast, show } = useToast();
   const { videoRef, cameraState, startCamera } = useCamera();
-  function validateQr() {
-    const current = JSON.parse(localStorage.getItem("ronda-smart-scanned") ?? "[]") as string[];
-    const next = Array.from(new Set([...current, "Garagem G1"]));
-    localStorage.setItem("ronda-smart-scanned", JSON.stringify(next));
-    show({ title: "QR Code validado", text: "Garagem G1 concluida e sincronizada com a ronda." });
+  async function validateQr() {
+    try {
+      const response = await fetch("/api/mobile/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ qrToken: "RS-006", notes: "Leitura simulada pelo scanner mobile" })
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error ?? "Falha ao validar QR Code.");
+      }
+      const current = JSON.parse(localStorage.getItem("ronda-smart-scanned") ?? "[]") as string[];
+      const next = Array.from(new Set([...current, "Garagem G1"]));
+      localStorage.setItem("ronda-smart-scanned", JSON.stringify(next));
+      show({ title: "QR Code validado", text: "Garagem G1 concluida e sincronizada com a central." });
+    } catch (err) {
+      show({ title: "Leitura nao enviada", text: err instanceof Error ? err.message : "Tente novamente." });
+    }
   }
   return (
     <MobileShell title="Scanner QR Code">
@@ -702,7 +829,7 @@ export function MobilePanico() {
         <AlertTriangle className="mx-auto text-red-500" size={42} />
         <p className="text-sm font-semibold text-slate-500">Use apenas em situacoes reais de risco.</p>
         <button onClick={() => setConfirm(true)} className="pulse-soft mx-auto grid h-56 w-56 place-items-center rounded-full bg-red-500 text-2xl font-black text-white shadow-soft">ACIONAR<br />EMERGENCIA</button>
-        {confirm && <Card><CardContent><p className="font-black">Confirmar envio?</p><p className="mt-2 text-sm text-slate-500">A central de monitoramento sera avisada imediatamente.</p><div className="mt-4 grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => setConfirm(false)}>Cancelar</Button><Button variant="danger" onClick={() => { setConfirm(false); show({ title: "Alerta enviado", text: "Alerta enviado para a central de monitoramento." }); }}>Enviar</Button></div></CardContent></Card>}
+        {confirm && <Card><CardContent><p className="font-black">Confirmar envio?</p><p className="mt-2 text-sm text-slate-500">A central de monitoramento sera avisada imediatamente.</p><div className="mt-4 grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => setConfirm(false)}>Cancelar</Button><Button variant="danger" onClick={async () => { setConfirm(false); const response = await fetch("/api/mobile/panic", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "Garagem G1" }) }); show(response.ok ? { title: "Alerta enviado", text: "Alerta enviado para a central de monitoramento." } : { title: "Falha no alerta", text: "Nao foi possivel enviar para a central." }); }}>Enviar</Button></div></CardContent></Card>}
       </div>
     </MobileShell>
   );

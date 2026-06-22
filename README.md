@@ -1,48 +1,64 @@
 # Ronda Smart
 
-Prototipo navegavel de um SaaS para controle de rondas, vigilancia e seguranca em condominios.
+Sistema SaaS/PWA para controle de rondas, vigilancia e seguranca em condominios.
 
-## Rodar localmente
+Esta base saiu do prototipo e agora possui:
 
-```bash
-npm install
-npm run dev
+- Next.js 15 + React + TypeScript
+- PWA com `next-pwa`
+- PostgreSQL
+- Sessao por cookie HTTP-only
+- Login real com usuarios seedados
+- APIs reais para condominios, vigilantes, pontos, rondas e ocorrencias
+- Docker Compose com app + banco
+
+## Credenciais iniciais
+
+Administrador:
+
+```text
+admin@rondasmart.com.br
+rondasmart-demo
 ```
 
-Acesse `http://localhost:3000/login`.
+Vigilante:
 
-## Fluxos de demo
+```text
+vigilante@rondasmart.com.br
+rondasmart-demo
+```
 
-- Administrador: use o seletor na tela de login e entre no painel em `/admin/dashboard`.
-- Vigilante: use o seletor na tela de login e entre no app mobile em `/mobile/home`.
-- PWA: em um navegador mobile, abra o endereco local/rede, use o botao "Instalar App" ou "Adicionar a Tela Inicial".
-
-Nao ha backend, banco de dados ou autenticacao real. Todos os dados sao mockados.
-
-## Deploy em servidor Linux
+## Desenvolvimento local
 
 Requisitos:
 
-- Node.js 20 LTS ou superior
-- npm
-- Git
-- PM2 ou outro gerenciador de processo
+- Node.js 20
+- Docker
 
-Exemplo:
+Suba o banco:
 
 ```bash
-git clone https://github.com/TIGTM/rondasmart.git
-cd rondasmart
-npm ci
-npm run build
-npm install -g pm2
-pm2 start npm --name ronda-smart -- start
-pm2 save
+docker compose up -d ronda-smart-db
 ```
 
-No servidor GTM, nao use a porta `3000`, pois ela pertence ao helpdesk. Use `3100` para este prototipo.
+Instale dependencias e prepare o banco:
 
-### Deploy com Docker
+```bash
+npm ci
+cp .env.example .env.local
+npm run db:setup
+npm run dev
+```
+
+Acesse:
+
+```text
+http://localhost:3000/login
+```
+
+## Deploy com Docker
+
+No servidor GTM, nao use a porta `3000`, pois ela pertence ao helpdesk. O Ronda Smart usa `3100`.
 
 ```bash
 cd /var/www
@@ -73,3 +89,10 @@ cd /var/www/rondasmart
 git pull
 docker compose up -d --build
 ```
+
+## Observacoes importantes
+
+- Fotos ainda sao armazenadas como URL/metadado; o proximo passo e adicionar MinIO/S3.
+- Camera real no celular exige HTTPS em navegadores modernos.
+- O schema inicial esta em `db/schema.sql`.
+- O seed idempotente esta em `scripts/db-setup.mjs`.

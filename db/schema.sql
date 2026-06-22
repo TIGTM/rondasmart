@@ -1,0 +1,94 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE TABLE IF NOT EXISTS condominiums (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT UNIQUE NOT NULL,
+  document TEXT,
+  address TEXT,
+  city TEXT NOT NULL,
+  district TEXT,
+  manager_name TEXT,
+  manager_phone TEXT,
+  manager_email TEXT,
+  status TEXT NOT NULL DEFAULT 'Ativo',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('ADMIN', 'MANAGER', 'GUARD')),
+  phone TEXT,
+  registration TEXT,
+  shift TEXT,
+  status TEXT NOT NULL DEFAULT 'Disponivel',
+  condominium_id UUID REFERENCES condominiums(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS checkpoints (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  condominium_id UUID NOT NULL REFERENCES condominiums(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  location TEXT,
+  qr_token TEXT UNIQUE NOT NULL,
+  status TEXT NOT NULL DEFAULT 'Operacional',
+  last_visit_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS patrols (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  condominium_id UUID NOT NULL REFERENCES condominiums(id) ON DELETE CASCADE,
+  guard_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'Em andamento',
+  started_at TIMESTAMPTZ,
+  finished_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS patrol_visits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  patrol_id UUID NOT NULL REFERENCES patrols(id) ON DELETE CASCADE,
+  checkpoint_id UUID NOT NULL REFERENCES checkpoints(id) ON DELETE CASCADE,
+  visited_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  photo_url TEXT,
+  notes TEXT,
+  UNIQUE (patrol_id, checkpoint_id)
+);
+
+CREATE TABLE IF NOT EXISTS incidents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  condominium_id UUID REFERENCES condominiums(id) ON DELETE SET NULL,
+  patrol_id UUID REFERENCES patrols(id) ON DELETE SET NULL,
+  guard_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  type TEXT NOT NULL,
+  location TEXT,
+  description TEXT,
+  priority TEXT NOT NULL DEFAULT 'Media',
+  status TEXT NOT NULL DEFAULT 'Aberta',
+  photo_url TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT UNIQUE NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_condominium ON checkpoints(condominium_id);
+CREATE INDEX IF NOT EXISTS idx_patrols_status ON patrols(status);
+CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status);
+CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);

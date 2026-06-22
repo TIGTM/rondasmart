@@ -1,7 +1,7 @@
 {
   "name": "Ronda Smart",
   "short_name": "RondaSmart",
-  "description": "Sistema inteligente para controle de rondas, vigilância e monitoramento em tempo real.",
+  "description": "Sistema inteligente para controle de rondas, vigilancia e monitoramento em tempo real.",
   "start_url": "/login",
   "scope": "/",
   "display": "standalone",
