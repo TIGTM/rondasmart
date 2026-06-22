@@ -40,4 +40,36 @@ pm2 start npm --name ronda-smart -- start
 pm2 save
 ```
 
-Por padrao o Next roda na porta `3000`. Configure o proxy reverso do Apache/Nginx para apontar o dominio para `http://127.0.0.1:3000`.
+No servidor GTM, nao use a porta `3000`, pois ela pertence ao helpdesk. Use `3100` para este prototipo.
+
+### Deploy com Docker
+
+```bash
+cd /var/www
+git clone https://github.com/TIGTM/rondasmart.git
+cd rondasmart
+docker compose up -d --build
+docker compose ps
+curl -I http://127.0.0.1:3100/login
+```
+
+Link externo esperado:
+
+```text
+http://129.121.40.94:3100/login
+```
+
+Se a porta 3100 ainda nao estiver liberada:
+
+```bash
+csf -p 3100
+csf -r
+```
+
+Para atualizar:
+
+```bash
+cd /var/www/rondasmart
+git pull
+docker compose up -d --build
+```
