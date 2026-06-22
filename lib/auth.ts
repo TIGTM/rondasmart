@@ -5,6 +5,11 @@ import { query, rowToCamel } from "@/lib/db";
 const COOKIE_NAME = "ronda_session";
 const SESSION_DAYS = 7;
 
+function shouldUseSecureCookie() {
+  if (process.env.COOKIE_SECURE) return process.env.COOKIE_SECURE === "true";
+  return Boolean(process.env.PUBLIC_APP_URL?.startsWith("https://"));
+}
+
 export type SessionUser = {
   id: string;
   name: string;
@@ -45,7 +50,7 @@ export async function createSession(userId: string) {
   cookieStore.set(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldUseSecureCookie(),
     path: "/",
     expires: expiresAt
   });
