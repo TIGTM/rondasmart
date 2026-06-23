@@ -173,13 +173,22 @@ async function main() {
 
     const guardResult = await client.query("SELECT id FROM users WHERE email = $1", ["vigilante@rondasmart.com.br"]);
     const guardId = guardResult.rows[0].id;
-    const patrolResult = await client.query(
-      `INSERT INTO patrols (condominium_id, guard_id, name, status, started_at)
-       VALUES ($1,$2,'Ronda Jardim America - Manha','Em andamento', now() - interval '42 minutes')
-       ON CONFLICT DO NOTHING
-       RETURNING id`,
+    const existingPatrol = await client.query(
+      `SELECT id
+       FROM patrols
+       WHERE condominium_id = $1 AND guard_id = $2 AND name = 'Ronda Jardim America - Manha' AND status = 'Em andamento'
+       ORDER BY created_at DESC
+       LIMIT 1`,
       [jardim, guardId]
     );
+    const patrolResult = existingPatrol.rows[0]?.id
+      ? existingPatrol
+      : await client.query(
+          `INSERT INTO patrols (condominium_id, guard_id, name, status, started_at)
+           VALUES ($1,$2,'Ronda Jardim America - Manha','Em andamento', now() - interval '42 minutes')
+           RETURNING id`,
+          [jardim, guardId]
+        );
 
     if (patrolResult.rows[0]?.id) {
       const patrolId = patrolResult.rows[0].id;

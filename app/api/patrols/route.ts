@@ -24,6 +24,20 @@ export async function POST(request: Request) {
   if (response) return response;
 
   const body = await request.json();
+  if (!body.guardId && user?.id) {
+    const active = await query(
+      `SELECT *
+       FROM patrols
+       WHERE guard_id = $1 AND status = 'Em andamento'
+       ORDER BY started_at DESC NULLS LAST, created_at DESC
+       LIMIT 1`,
+      [user.id]
+    );
+    if (active.rowCount) {
+      return Response.json({ patrol: rowsToCamel(active.rows)[0] });
+    }
+  }
+
   const result = await query(
     `INSERT INTO patrols (condominium_id, guard_id, name, status, started_at)
      VALUES ($1,$2,$3,'Em andamento',now())

@@ -52,6 +52,14 @@ import {
 import { cn } from "@/lib/utils";
 
 type Toast = { title: string; text: string };
+type FormValues = Record<string, string>;
+
+async function apiJson<T>(url: string, options?: RequestInit) {
+  const response = await fetch(url, options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error ?? "Nao foi possivel concluir a operacao.");
+  return data as T;
+}
 
 function useToast() {
   const [toast, setToast] = useState<Toast | null>(null);
@@ -168,7 +176,7 @@ export function LoginPage() {
             <Logo />
             <div>
               <h1 className="text-3xl font-black tracking-tight md:text-4xl">Seguranca monitorada em tempo real.</h1>
-              <p className="mt-3 text-slate-500">Demo comercial com painel web, aplicativo PWA e dados simulados para apresentacao.</p>
+              <p className="mt-3 text-slate-500">Painel web, aplicativo PWA e monitoramento operacional em tempo real.</p>
             </div>
             <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
               <button onClick={() => setProfile("admin")} className={cn("rounded-md px-3 py-2 text-sm font-semibold", profile === "admin" && "bg-white shadow-sm")}>Administrador</button>
@@ -262,10 +270,7 @@ function AdminLayout({ title, children }: { title: string; children: React.React
               </Button>
             </div>
             {adminLinks}
-            <Link href="/login" onClick={() => setMobileMenuOpen(false)} className="mt-6 flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-600">
-              <LogOut size={18} />
-              Sair
-            </Link>
+            <LogoutButton mobileMenuClose={() => setMobileMenuOpen(false)} className="mt-6 w-full justify-start" />
           </aside>
         </div>
       )}
@@ -281,7 +286,7 @@ function AdminLayout({ title, children }: { title: string; children: React.React
             </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="icon"><Bell size={18} /></Button>
-              <Link href="/login"><Button variant="outline"><LogOut size={16} />Sair</Button></Link>
+              <LogoutButton />
             </div>
           </div>
         </header>
@@ -392,8 +397,8 @@ export function AdminDashboard() {
               <div className="rounded-lg bg-red-500 p-3 text-white"><Siren /></div>
               <div>
                 <p className="text-sm font-black uppercase text-red-600">Alerta em destaque</p>
-                <h2 className="mt-2 text-2xl font-black">Emergencia mockada ativa</h2>
-                <p className="mt-2 text-sm text-red-700">Botao de panico acionado na Garagem G1. Central notificada para demonstracao.</p>
+                <h2 className="mt-2 text-2xl font-black">Emergencia ativa</h2>
+                <p className="mt-2 text-sm text-red-700">Botao de panico acionado na Garagem G1. Central notificada para atendimento.</p>
               </div>
             </div>
           </CardContent>
@@ -422,24 +427,60 @@ export function AdminDashboard() {
   );
 }
 
-function FormModal({ title, button, children }: { title: string; button: string; children: React.ReactNode }) {
+function FormModal({
+  title,
+  button,
+  submitLabel = "Salvar",
+  children,
+  onSubmit
+}: {
+  title: string;
+  button: string;
+  submitLabel?: string;
+  children: React.ReactNode;
+  onSubmit: (values: FormValues) => Promise<void>;
+}) {
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const formData = new FormData(event.currentTarget);
+      const values = Object.fromEntries(Array.from(formData.entries()).map(([key, value]) => [key, String(value)]));
+      await onSubmit(values);
+      setOpen(false);
+      event.currentTarget.reset();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel salvar.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <>
       <Button onClick={() => setOpen(true)}><Plus size={16} />{button}</Button>
       {open && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4">
-          <div className="w-full max-w-xl rounded-lg bg-white shadow-soft">
+          <form onSubmit={submit} className="w-full max-w-xl rounded-lg bg-white shadow-soft">
             <div className="flex items-center justify-between border-b border-slate-100 p-5">
               <h2 className="text-xl font-black">{title}</h2>
-              <button onClick={() => setOpen(false)}><X /></button>
+              <button type="button" onClick={() => setOpen(false)}><X /></button>
             </div>
             <div className="grid gap-3 p-5">{children}</div>
+            {error && <p className="mx-5 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-600">{error}</p>}
             <div className="flex justify-end gap-2 border-t border-slate-100 p-5">
-              <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-              <Button onClick={() => setOpen(false)}>Simular cadastro</Button>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}
+                {submitLabel}
+              </Button>
             </div>
-          </div>
+          </form>
         </div>
       )}
     </>
@@ -448,9 +489,32 @@ function FormModal({ title, button, children }: { title: string; button: string;
 
 export function CondominiosPage() {
   const [dbCondominios, setDbCondominios] = useState<any[] | null>(null);
-  useEffect(() => {
-    fetch("/api/condominiums").then((r) => (r.ok ? r.json() : null)).then((d) => setDbCondominios(d?.condominiums ?? null)).catch(() => setDbCondominios(null));
-  }, []);
+  async function loadCondominios() {
+    try {
+      const data = await apiJson<{ condominiums: any[] }>("/api/condominiums");
+      setDbCondominios(data.condominiums);
+    } catch {
+      setDbCondominios(null);
+    }
+  }
+  useEffect(() => { void loadCondominios(); }, []);
+  async function createCondominium(values: FormValues) {
+    await apiJson("/api/condominiums", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: values.name,
+        document: values.document,
+        address: values.address,
+        city: values.city,
+        district: values.district,
+        managerName: values.managerName,
+        managerPhone: values.managerPhone,
+        managerEmail: values.managerEmail
+      })
+    });
+    await loadCondominios();
+  }
   const rows = dbCondominios?.map((c) => ({
     nome: c.name,
     cidade: c.city,
@@ -461,9 +525,40 @@ export function CondominiosPage() {
   })) ?? condominios;
   return (
     <AdminLayout title="Condominios">
-      <div className="mb-4 flex justify-end"><FormModal title="Novo condominio" button="Novo Condominio"><Input placeholder="Nome" /><Input placeholder="CNPJ" /><Input placeholder="Endereco" /><Input placeholder="Cidade" /><Input placeholder="Nome do sindico" /><Input placeholder="Telefone" /><Input placeholder="E-mail" /></FormModal></div>
+      <div className="mb-4 flex justify-end">
+        <FormModal title="Novo condominio" button="Novo Condominio" submitLabel="Salvar condominio" onSubmit={createCondominium}>
+          <Input name="name" placeholder="Nome" required />
+          <Input name="document" placeholder="CNPJ" />
+          <Input name="address" placeholder="Endereco" />
+          <Input name="city" placeholder="Cidade" required />
+          <Input name="district" placeholder="Bairro" />
+          <Input name="managerName" placeholder="Nome do sindico" />
+          <Input name="managerPhone" placeholder="Telefone" />
+          <Input name="managerEmail" placeholder="E-mail" type="email" />
+        </FormModal>
+      </div>
       <Card><Table headers={["Nome", "Cidade", "Bairro", "Sindico", "Vigilantes", "Status"]} rows={rows.map((c) => [c.nome, c.cidade, c.bairro, c.sindico, c.vigilantes, <StatusBadge key={c.nome} status={c.status} />])} /></Card>
     </AdminLayout>
+  );
+}
+
+function LogoutButton({ mobileMenuClose, className }: { mobileMenuClose?: () => void; className?: string }) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+
+  async function logout() {
+    setLoading(true);
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
+    mobileMenuClose?.();
+    router.push("/login");
+    router.refresh();
+  }
+
+  return (
+    <Button variant="outline" className={className} onClick={logout} disabled={loading}>
+      {loading ? <Loader2 className="animate-spin" size={16} /> : <LogOut size={16} />}
+      Sair
+    </Button>
   );
 }
 
@@ -480,9 +575,35 @@ function Table({ headers, rows }: { headers: string[]; rows: React.ReactNode[][]
 
 export function VigilantesPage() {
   const [dbVigilantes, setDbVigilantes] = useState<any[] | null>(null);
+  const [dbCondominios, setDbCondominios] = useState<any[]>([]);
+  async function loadVigilantes() {
+    try {
+      const data = await apiJson<{ guards: any[] }>("/api/guards");
+      setDbVigilantes(data.guards);
+    } catch {
+      setDbVigilantes(null);
+    }
+  }
   useEffect(() => {
-    fetch("/api/guards").then((r) => (r.ok ? r.json() : null)).then((d) => setDbVigilantes(d?.guards ?? null)).catch(() => setDbVigilantes(null));
+    void loadVigilantes();
+    apiJson<{ condominiums: any[] }>("/api/condominiums").then((data) => setDbCondominios(data.condominiums)).catch(() => setDbCondominios([]));
   }, []);
+  async function createGuard(values: FormValues) {
+    await apiJson("/api/guards", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: values.name,
+        email: values.email,
+        phone: values.phone,
+        registration: values.registration,
+        shift: values.shift,
+        condominiumId: values.condominiumId || null,
+        password: values.password || "rondasmart-demo"
+      })
+    });
+    await loadVigilantes();
+  }
   const rows = dbVigilantes?.map((v, index) => ({
     id: index + 1,
     nome: v.name,
@@ -493,7 +614,23 @@ export function VigilantesPage() {
   })) ?? vigilantes;
   return (
     <AdminLayout title="Vigilantes">
-      <div className="mb-4 flex justify-end"><FormModal title="Cadastrar vigilante" button="Cadastrar Vigilante"><Input placeholder="Nome" /><Input placeholder="Telefone" /><Select><option>Condominio Jardim America</option></Select><Select><option>07:00 - 19:00</option><option>19:00 - 07:00</option></Select></FormModal></div>
+      <div className="mb-4 flex justify-end">
+        <FormModal title="Cadastrar vigilante" button="Cadastrar Vigilante" submitLabel="Salvar vigilante" onSubmit={createGuard}>
+          <Input name="name" placeholder="Nome" required />
+          <Input name="email" placeholder="E-mail de acesso" type="email" required />
+          <Input name="phone" placeholder="Telefone" />
+          <Input name="registration" placeholder="Matricula" />
+          <Select name="condominiumId" required>
+            <option value="">Selecione o condominio</option>
+            {dbCondominios.map((condominium) => <option key={condominium.id} value={condominium.id}>{condominium.name}</option>)}
+          </Select>
+          <Select name="shift">
+            <option>07:00 - 19:00</option>
+            <option>19:00 - 07:00</option>
+          </Select>
+          <Input name="password" placeholder="Senha inicial" defaultValue="rondasmart-demo" />
+        </FormModal>
+      </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {rows.map((v) => <Card key={v.nome}><CardContent><div className="flex items-center gap-4"><div className="grid h-12 w-12 place-items-center rounded-full bg-slate-950 font-black text-white">{v.nome.split(" ").map((p: string) => p[0]).slice(0, 2)}</div><div className="flex-1"><p className="font-black">{v.nome}</p><p className="text-sm text-slate-500">{v.condominio}</p></div><StatusBadge status={v.status} /></div><div className="mt-4 grid gap-2 text-sm text-slate-500"><span className="flex gap-2"><Phone size={16} />{v.telefone}</span><span className="flex gap-2"><Radio size={16} />{v.turno}</span></div></CardContent></Card>)}
       </div>
@@ -524,11 +661,34 @@ function QRPattern({ code = "RS-001", large = false }: { code?: string; large?: 
 }
 
 export function PontosPage() {
-  const [selectedQr, setSelectedQr] = useState<(typeof pontos)[number] | null>(null);
+  const [selectedQr, setSelectedQr] = useState<any | null>(null);
   const [dbPontos, setDbPontos] = useState<any[] | null>(null);
+  const [dbCondominios, setDbCondominios] = useState<any[]>([]);
+  async function loadPontos() {
+    try {
+      const data = await apiJson<{ checkpoints: any[] }>("/api/checkpoints");
+      setDbPontos(data.checkpoints);
+    } catch {
+      setDbPontos(null);
+    }
+  }
   useEffect(() => {
-    fetch("/api/checkpoints").then((r) => (r.ok ? r.json() : null)).then((d) => setDbPontos(d?.checkpoints ?? null)).catch(() => setDbPontos(null));
+    void loadPontos();
+    apiJson<{ condominiums: any[] }>("/api/condominiums").then((data) => setDbCondominios(data.condominiums)).catch(() => setDbCondominios([]));
   }, []);
+  async function createCheckpoint(values: FormValues) {
+    await apiJson("/api/checkpoints", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        condominiumId: values.condominiumId,
+        name: values.name,
+        location: values.location,
+        qrToken: values.qrToken || undefined
+      })
+    });
+    await loadPontos();
+  }
   const rows = dbPontos?.map((p) => ({
     nome: p.name,
     localizacao: p.location,
@@ -538,6 +698,17 @@ export function PontosPage() {
   })) ?? pontos;
   return (
     <AdminLayout title="Pontos de ronda">
+      <div className="mb-4 flex justify-end">
+        <FormModal title="Novo ponto de ronda" button="Novo Ponto" submitLabel="Salvar ponto" onSubmit={createCheckpoint}>
+          <Select name="condominiumId" required>
+            <option value="">Selecione o condominio</option>
+            {dbCondominios.map((condominium) => <option key={condominium.id} value={condominium.id}>{condominium.name}</option>)}
+          </Select>
+          <Input name="name" placeholder="Nome do ponto" required />
+          <Input name="location" placeholder="Localizacao" required />
+          <Input name="qrToken" placeholder="Codigo QR opcional, ex: RS-011" />
+        </FormModal>
+      </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {rows.map((p) => <Card key={p.nome}><CardContent><div className="flex gap-4"><QRPattern code={p.codigo} /><div className="flex-1"><p className="font-black">{p.nome}</p><p className="text-sm text-slate-500">{p.localizacao}</p><div className="mt-3"><StatusBadge status={p.status} /></div><p className="mt-2 text-xs font-semibold text-slate-400">Ultima visita: {p.ultimaVisita}</p><p className="mt-1 text-xs font-black text-blue-600">{p.codigo}</p></div></div><div className="mt-4 flex gap-2"><Button variant="outline" className="flex-1" onClick={() => setSelectedQr(p)}>Ver detalhes</Button><Button className="flex-1" onClick={() => setSelectedQr(p)}><QrCode size={16} />Gerar QR</Button></div></CardContent></Card>)}
       </div>
@@ -550,7 +721,7 @@ export function PontosPage() {
             <div className="mt-4 rounded-lg bg-slate-50 p-3 font-mono text-sm font-black text-blue-600">{selectedQr.codigo}</div>
             <div className="mt-5 grid grid-cols-2 gap-2">
               <Button variant="outline" onClick={() => setSelectedQr(null)}>Fechar</Button>
-              <Button onClick={() => setSelectedQr(null)}>Simular impressao</Button>
+              <Button onClick={() => window.print()}>Imprimir QR</Button>
             </div>
           </div>
         </div>
@@ -580,7 +751,7 @@ export function RondasPage() {
       <Filters labels={["Condominio", "Vigilante", "Status", "Data"]} />
       <div className="mt-5 grid gap-5 xl:grid-cols-[.8fr_1.2fr]">
         <Card><CardHeader><h2 className="font-black">Timeline da ronda</h2></CardHeader><CardContent><Timeline items={timeline} /></CardContent></Card>
-        <Card><CardHeader><h2 className="font-black">Tempo real simulado</h2></CardHeader><CardContent><MockMap /><div className="mt-4 grid gap-3 md:grid-cols-4"><MiniStat label="Vigilante" value="Joao" /><MiniStat label="Tempo" value="52 min" /><MiniStat label="Visitados" value="7" /><MiniStat label="Pendentes" value="3" /></div></CardContent></Card>
+        <Card><CardHeader><h2 className="font-black">Tempo real</h2></CardHeader><CardContent><MockMap /><div className="mt-4 grid gap-3 md:grid-cols-4"><MiniStat label="Vigilante" value="Joao" /><MiniStat label="Tempo" value="52 min" /><MiniStat label="Visitados" value="7" /><MiniStat label="Pendentes" value="3" /></div></CardContent></Card>
       </div>
       <Card className="mt-5"><Table headers={["Data", "Vigilante", "Condominio", "Ronda", "Inicio", "Fim", "Pontos", "Ocorrencias", "Status"]} rows={rows.map((r) => [r.data, r.vigilante, r.condominio, r.ronda, r.inicio, r.fim, r.pontos, r.ocorrencias, <StatusBadge key={r.ronda} status={r.status} />])} /></Card>
     </AdminLayout>
@@ -672,12 +843,37 @@ function MobileShell({ title, children }: { title: string; children: React.React
 }
 
 export function MobileHome() {
+  const router = useRouter();
+  const { toast, show } = useToast();
+  const [starting, setStarting] = useState(false);
+
+  async function startPatrol() {
+    setStarting(true);
+    try {
+      await apiJson("/api/patrols", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Ronda iniciada pelo app" })
+      });
+      localStorage.removeItem("ronda-smart-scanned");
+      router.push("/mobile/ronda");
+    } catch (err) {
+      show({ title: "Falha ao iniciar", text: err instanceof Error ? err.message : "Tente novamente." });
+    } finally {
+      setStarting(false);
+    }
+  }
+
   return (
     <MobileShell title="Inicio">
+      <ToastView toast={toast} />
       <div className="space-y-4">
         <div><p className="text-sm font-bold text-blue-600">Ola, Joao</p><h1 className="text-2xl font-black">Status: Em Servico</h1></div>
         <Card><CardContent><p className="text-sm text-slate-500">Condominio atual</p><p className="text-xl font-black">Condominio Jardim America</p><p className="mt-3 text-sm font-semibold text-slate-500">Turno: 07:00 as 19:00</p><p className="text-sm font-semibold text-blue-600">Proxima ronda: 09:00</p></CardContent></Card>
-        <Link href="/mobile/ronda"><Button size="lg" className="w-full py-6 text-lg"><Radio />Iniciar Ronda</Button></Link>
+        <Button size="lg" className="w-full py-6 text-lg" onClick={startPatrol} disabled={starting}>
+          {starting ? <Loader2 className="animate-spin" /> : <Radio />}
+          Iniciar Ronda
+        </Button>
         <Card><CardContent><p className="font-black">Escala do dia</p><p className="mt-2 text-sm text-slate-500">Portaria, blocos, garagem e areas comuns a cada 60 minutos.</p></CardContent></Card>
         <Card><CardContent><p className="font-black">Avisos</p><p className="mt-2 text-sm text-slate-500">Teste mensal do botao de panico liberado para demonstracao.</p></CardContent></Card>
       </div>
@@ -686,19 +882,35 @@ export function MobileHome() {
 }
 
 export function MobileRonda() {
+  const { toast, show } = useToast();
   const [scanned, setScanned] = useState<string[]>([]);
+  const [finishing, setFinishing] = useState(false);
   useEffect(() => {
     setScanned(JSON.parse(localStorage.getItem("ronda-smart-scanned") ?? "[]") as string[]);
   }, []);
+  async function finishPatrol() {
+    setFinishing(true);
+    try {
+      await apiJson("/api/patrols/finish", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      localStorage.removeItem("ronda-smart-scanned");
+      setScanned([]);
+      show({ title: "Ronda finalizada", text: "Status sincronizado com a central." });
+    } catch (err) {
+      show({ title: "Nao foi possivel finalizar", text: err instanceof Error ? err.message : "Tente novamente." });
+    } finally {
+      setFinishing(false);
+    }
+  }
   const checklist = mobileChecklist.map((item) => ({ ...item, done: item.done || scanned.includes(item.label) }));
   const doneCount = checklist.filter((item) => item.done).length;
   const progress = Math.round((doneCount / checklist.length) * 100);
   return (
     <MobileShell title="Ronda em execucao">
+      <ToastView toast={toast} />
       <div className="space-y-4">
         <Card><CardContent><div className="flex justify-between"><div><p className="text-sm text-slate-500">Ronda Jardim America</p><h1 className="text-2xl font-black">00:32:18</h1></div><StatusBadge status="Em andamento" /></div><div className="mt-4 h-3 rounded-full bg-slate-100"><div className="h-3 rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} /></div><p className="mt-2 text-sm font-semibold text-slate-500">{doneCount} concluidos, {checklist.length - doneCount} pendentes</p></CardContent></Card>
         <Card><CardContent className="space-y-3">{checklist.map((item) => <div key={item.label} className="flex items-center gap-3 rounded-lg bg-slate-50 p-3 font-semibold"><span className={cn("grid h-6 w-6 place-items-center rounded-full", item.done ? "bg-green-500 text-white" : "bg-white text-slate-400 ring-1 ring-slate-200")}>{item.done ? <Check size={14} /> : "o"}</span>{item.label}</div>)}</CardContent></Card>
-        <div className="grid grid-cols-2 gap-3"><Link href="/mobile/scanner"><Button className="w-full"><ScanLine size={16} />Escanear QR</Button></Link><Link href="/mobile/foto"><Button variant="outline" className="w-full"><Camera size={16} />Foto</Button></Link><Link href="/mobile/ocorrencia"><Button variant="outline" className="w-full"><ShieldAlert size={16} />Ocorrencia</Button></Link><Button variant="secondary">Finalizar</Button></div>
+        <div className="grid grid-cols-2 gap-3"><Link href="/mobile/scanner"><Button className="w-full"><ScanLine size={16} />Escanear QR</Button></Link><Link href="/mobile/foto"><Button variant="outline" className="w-full"><Camera size={16} />Foto</Button></Link><Link href="/mobile/ocorrencia"><Button variant="outline" className="w-full"><ShieldAlert size={16} />Ocorrencia</Button></Link><Button variant="secondary" onClick={finishPatrol} disabled={finishing}>{finishing ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}Finalizar</Button></div>
         <Link href="/mobile/panico"><Button variant="danger" className="w-full"><Siren size={18} />Botao de panico</Button></Link>
       </div>
     </MobileShell>
@@ -745,10 +957,12 @@ export function MobileScanner() {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.error ?? "Falha ao validar QR Code.");
       }
+      const data = await response.json();
+      const checkpointName = data.checkpoint?.name ?? "Garagem G1";
       const current = JSON.parse(localStorage.getItem("ronda-smart-scanned") ?? "[]") as string[];
-      const next = Array.from(new Set([...current, "Garagem G1"]));
+      const next = Array.from(new Set([...current, checkpointName]));
       localStorage.setItem("ronda-smart-scanned", JSON.stringify(next));
-      show({ title: "QR Code validado", text: "Garagem G1 concluida e sincronizada com a central." });
+      show({ title: "QR Code validado", text: `${checkpointName} concluido e sincronizado com a central.` });
     } catch (err) {
       show({ title: "Leitura nao enviada", text: err instanceof Error ? err.message : "Tente novamente." });
     }
@@ -767,7 +981,7 @@ export function MobileScanner() {
         </div>
         <div className="grid grid-cols-2 gap-2">
           <Button variant="outline" onClick={startCamera} disabled={cameraState === "loading"}>{cameraState === "loading" ? <Loader2 className="animate-spin" size={16} /> : <Camera size={16} />}Abrir camera</Button>
-          <Button onClick={validateQr}><QrCode size={16} />Simular leitura</Button>
+        <Button onClick={validateQr}><QrCode size={16} />Validar QR RS-006</Button>
         </div>
         <Link href="/mobile/ronda"><Button variant="secondary" className="w-full">Voltar para checklist</Button></Link>
       </div>
@@ -811,10 +1025,54 @@ export function MobileFoto() {
 
 export function MobileOcorrencia() {
   const { toast, show } = useToast();
+  const [type, setType] = useState("Portao aberto");
+  const [location, setLocation] = useState("Garagem G1");
+  const [description, setDescription] = useState("");
+  const [priority, setPriority] = useState("Media");
+  const [loading, setLoading] = useState(false);
+
+  async function registerIncident() {
+    setLoading(true);
+    try {
+      await apiJson("/api/incidents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, location, description, priority })
+      });
+      setDescription("");
+      show({ title: "Ocorrencia enviada", text: "Ocorrencia registrada e enviada para a central." });
+    } catch (err) {
+      show({ title: "Falha no envio", text: err instanceof Error ? err.message : "Tente novamente." });
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <MobileShell title="Registrar ocorrencia">
       <ToastView toast={toast} />
-      <div className="space-y-3"><Select><option>Portao aberto</option><option>Pessoa suspeita</option><option>Equipamento danificado</option></Select><Input placeholder="Local" defaultValue="Garagem G1" /><Textarea placeholder="Descricao" /><Button variant="outline" className="w-full"><Camera size={16} />Anexar foto</Button><Select><option>Baixa</option><option>Media</option><option>Alta</option><option>Emergencia</option></Select><Button className="w-full" size="lg" onClick={() => show({ title: "Ocorrencia enviada", text: "Ocorrencia registrada e enviada para a central." })}>Registrar Ocorrencia</Button></div>
+      <div className="space-y-3">
+        <Select value={type} onChange={(event) => setType(event.target.value)}>
+          <option>Portao aberto</option>
+          <option>Pessoa suspeita</option>
+          <option>Equipamento danificado</option>
+          <option>Lampada queimada</option>
+          <option>Vazamento</option>
+        </Select>
+        <Input placeholder="Local" value={location} onChange={(event) => setLocation(event.target.value)} />
+        <Textarea placeholder="Descricao" value={description} onChange={(event) => setDescription(event.target.value)} />
+        <Button variant="outline" className="w-full" onClick={() => show({ title: "Foto pronta", text: "Use a tela Foto para capturar evidencia antes de registrar." })}><Camera size={16} />Anexar foto</Button>
+        <Select value={priority} onChange={(event) => setPriority(event.target.value)}>
+          <option>Baixa</option>
+          <option>Media</option>
+          <option>Alta</option>
+          <option>Emergencia</option>
+        </Select>
+        <Button className="w-full" size="lg" onClick={registerIncident} disabled={loading}>
+          {loading ? <Loader2 className="animate-spin" size={18} /> : <ShieldAlert size={18} />}
+          Registrar Ocorrencia
+        </Button>
+      </div>
     </MobileShell>
   );
 }
@@ -842,7 +1100,7 @@ export function MobilePerfil() {
         <div className="mx-auto grid h-24 w-24 place-items-center rounded-full bg-slate-950 text-3xl font-black text-white">JP</div>
         <div><h1 className="text-2xl font-black">Joao Pereira</h1><p className="text-sm text-slate-500">Matricula RS-0042</p></div>
         <Card><CardContent className="space-y-3 text-left text-sm font-semibold text-slate-600"><p>Telefone: 31 99910-1010</p><p>Condominio atual: Jardim America</p><p>Turno: 07:00 as 19:00</p><p>Status: Em Servico</p></CardContent></Card>
-        <Link href="/login"><Button variant="outline" className="w-full"><LogOut size={16} />Sair</Button></Link>
+        <LogoutButton className="w-full" />
       </div>
     </MobileShell>
   );

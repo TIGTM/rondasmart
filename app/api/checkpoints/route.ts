@@ -1,5 +1,6 @@
 import { requireSession } from "@/lib/auth";
 import { query, rowsToCamel } from "@/lib/db";
+import { randomUUID } from "node:crypto";
 
 export async function GET() {
   const { response } = await requireSession(["ADMIN", "MANAGER", "GUARD"]);
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
       body.condominiumId,
       body.name,
       body.location ?? null,
-      body.qrToken ?? `RS-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+      body.qrToken ?? `RS-${randomUUID().slice(0, 8).toUpperCase()}`,
       body.status ?? "Operacional"
     ]
   );
