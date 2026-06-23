@@ -96,6 +96,34 @@ async function upsertUser(client, data) {
   );
 }
 
+async function cleanupDemoData(client) {
+  await client.query(
+    `DELETE FROM companies
+     WHERE name IN ('GTM Alimentos')
+        OR contact_email IN ('cliente@rondasmart.com.br')`
+  );
+
+  await client.query(
+    `DELETE FROM users
+     WHERE email IN (
+       'cliente@rondasmart.com.br',
+       'vigilante@rondasmart.com.br',
+       'marcos@rondasmart.com.br',
+       'carlos@rondasmart.com.br',
+       'fernanda@rondasmart.com.br'
+     )`
+  );
+
+  await client.query(
+    `DELETE FROM condominiums
+     WHERE name IN (
+       'Condominio Jardim America',
+       'Residencial Monte Verde',
+       'Edificio Solar das Palmeiras'
+     )`
+  );
+}
+
 async function main() {
   const schema = await readFile(new URL("../db/schema.sql", import.meta.url), "utf8");
   const client = await pool.connect();
@@ -103,6 +131,7 @@ async function main() {
   try {
     await client.query("BEGIN");
     await client.query(schema);
+    await cleanupDemoData(client);
 
     const platformCompany = await upsertCompany(client, {
       name: "Ronda Smart Plataforma",
@@ -114,60 +143,6 @@ async function main() {
       status: "Ativo"
     });
 
-    const demoCompany = await upsertCompany(client, {
-      name: "GTM Alimentos",
-      document: "11.111.111/0001-11",
-      contactName: "Cliente Administrador",
-      contactEmail: "cliente@rondasmart.com.br",
-      contactPhone: "31 3333-0001",
-      plan: "Profissional",
-      status: "Ativo"
-    });
-
-    const jardim = await upsertCondominium(client, {
-      companyId: demoCompany,
-      name: "Condominio Jardim America",
-      document: "12.345.678/0001-90",
-      address: "Rua das Acacias, 120",
-      city: "Belo Horizonte/MG",
-      district: "Sion",
-      managerName: "Marina Duarte",
-      managerPhone: "31 3333-0101",
-      managerEmail: "marina@jardimamerica.com.br",
-      status: "Ativo"
-    });
-    const monte = await upsertCondominium(client, {
-      companyId: demoCompany,
-      name: "Residencial Monte Verde",
-      document: "23.456.789/0001-10",
-      address: "Alameda Verde, 45",
-      city: "Nova Lima/MG",
-      district: "Vila da Serra",
-      managerName: "Rafael Mendes",
-      managerPhone: "31 3333-0202",
-      managerEmail: "rafael@monteverde.com.br",
-      status: "Ativo"
-    });
-    const solar = await upsertCondominium(client, {
-      companyId: demoCompany,
-      name: "Edificio Solar das Palmeiras",
-      document: "34.567.890/0001-20",
-      address: "Av. Joao Cesar, 980",
-      city: "Contagem/MG",
-      district: "Eldorado",
-      managerName: "Claudia Rocha",
-      managerPhone: "31 3333-0303",
-      managerEmail: "claudia@solarpalmeiras.com.br",
-      status: "Implantacao"
-    });
-
-    const guards = [
-      ["Joao Pereira", "vigilante@rondasmart.com.br", "GUARD", "31 99910-1010", "RS-0042", "07:00 - 19:00", "Em ronda", jardim],
-      ["Marcos Silva", "marcos@rondasmart.com.br", "GUARD", "31 99920-2020", "RS-0043", "19:00 - 07:00", "Disponivel", monte],
-      ["Carlos Andrade", "carlos@rondasmart.com.br", "GUARD", "31 99930-3030", "RS-0044", "07:00 - 19:00", "Offline", solar],
-      ["Fernanda Costa", "fernanda@rondasmart.com.br", "GUARD", "31 99940-4040", "RS-0045", "12:00 - 00:00", "Em alerta", jardim]
-    ];
-
     await upsertUser(client, {
       name: "Administrador Ronda Smart",
       email: "admin@rondasmart.com.br",
@@ -177,113 +152,6 @@ async function main() {
       companyId: platformCompany,
       condominiumId: null
     });
-
-    await upsertUser(client, {
-      name: "Administrador do Cliente",
-      email: "cliente@rondasmart.com.br",
-      password: "rondasmart-demo",
-      role: "CLIENT_ADMIN",
-      status: "Disponivel",
-      companyId: demoCompany,
-      condominiumId: null
-    });
-
-    for (const [name, email, role, phone, registration, shift, status, condominiumId] of guards) {
-      await upsertUser(client, {
-        name,
-        email,
-        password: "rondasmart-demo",
-        role,
-        companyId: demoCompany,
-        phone,
-        registration,
-        shift,
-        status,
-        condominiumId
-      });
-    }
-
-    const checkpointNames = [
-      "Portaria Principal",
-      "Bloco A",
-      "Bloco B",
-      "Piscina",
-      "Salao de Festas",
-      "Garagem G1",
-      "Garagem G2",
-      "Casa de Maquinas",
-      "Area Gourmet",
-      "Playground"
-    ];
-
-    for (const [index, name] of checkpointNames.entries()) {
-      await client.query(
-        `INSERT INTO checkpoints (condominium_id, name, location, qr_token, status, last_visit_at)
-         VALUES ($1,$2,$3,$4,$5, now() - (($6 || ' minutes')::interval))
-         ON CONFLICT (qr_token) DO UPDATE SET
-           name = EXCLUDED.name,
-           location = EXCLUDED.location,
-           status = EXCLUDED.status,
-           updated_at = now()`,
-        [
-          jardim,
-          name,
-          index < 3 ? "Acesso e blocos" : index < 7 ? "Area comum" : "Area tecnica",
-          `RS-${String(index + 1).padStart(3, "0")}`,
-          index % 4 === 0 ? "Pendente" : "Operacional",
-          12 + index * 9
-        ]
-      );
-    }
-
-    const guardResult = await client.query("SELECT id FROM users WHERE email = $1", ["vigilante@rondasmart.com.br"]);
-    const guardId = guardResult.rows[0].id;
-    const existingPatrol = await client.query(
-      `SELECT id
-       FROM patrols
-       WHERE condominium_id = $1 AND guard_id = $2 AND name = 'Ronda Jardim America - Manha' AND status = 'Em andamento'
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [jardim, guardId]
-    );
-    const patrolResult = existingPatrol.rows[0]?.id
-      ? existingPatrol
-      : await client.query(
-          `INSERT INTO patrols (condominium_id, guard_id, name, status, started_at)
-           VALUES ($1,$2,'Ronda Jardim America - Manha','Em andamento', now() - interval '42 minutes')
-           RETURNING id`,
-          [jardim, guardId]
-        );
-
-    if (patrolResult.rows[0]?.id) {
-      const patrolId = patrolResult.rows[0].id;
-      const visited = await client.query("SELECT id FROM checkpoints WHERE condominium_id = $1 ORDER BY name LIMIT 3", [jardim]);
-      for (const checkpoint of visited.rows) {
-        await client.query(
-          `INSERT INTO patrol_visits (patrol_id, checkpoint_id, notes)
-           VALUES ($1,$2,'Validado no seed inicial')
-           ON CONFLICT DO NOTHING`,
-          [patrolId, checkpoint.id]
-        );
-      }
-    }
-
-    const incidents = [
-      ["Emergencia - botao de panico", "Garagem G1", "Alerta enviado pelo vigilante durante ronda.", "Emergencia", "Aberta"],
-      ["Lampada queimada", "Bloco A", "Lampada do corredor principal apagada.", "Media", "Em analise"],
-      ["Portao aberto", "Portaria Principal", "Portao lateral encontrado aberto.", "Alta", "Aberta"],
-      ["Vazamento", "Casa de Maquinas", "Pequeno vazamento proximo ao quadro de bombas.", "Alta", "Resolvida"]
-    ];
-    for (const incident of incidents) {
-      await client.query(
-        `INSERT INTO incidents (condominium_id, guard_id, type, location, description, priority, status)
-         SELECT $1,$2,$3,$4,$5,$6,$7
-         WHERE NOT EXISTS (
-           SELECT 1 FROM incidents WHERE type = $3 AND location = $4 AND created_at > now() - interval '30 days'
-         )`,
-        [jardim, guardId, ...incident]
-      );
-    }
 
     await client.query("COMMIT");
 

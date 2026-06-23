@@ -22,19 +22,7 @@ admin@rondasmart.com.br
 rondasmart-demo
 ```
 
-Administrador do cliente demo:
-
-```text
-cliente@rondasmart.com.br
-rondasmart-demo
-```
-
-Vigilante:
-
-```text
-vigilante@rondasmart.com.br
-rondasmart-demo
-```
+Os demais usuarios devem ser criados pelo painel master e pelo painel do cliente.
 
 ## Desenvolvimento local
 

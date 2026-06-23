@@ -159,10 +159,10 @@ function InstallBanner() {
 export function LoginPage() {
   const router = useRouter();
   const { toast, show } = useToast();
-  const [profile, setProfile] = useState<"master" | "cliente" | "vigilante">("master");
+  const [email, setEmail] = useState("admin@rondasmart.com.br");
+  const [password, setPassword] = useState("rondasmart-demo");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const email = profile === "master" ? "admin@rondasmart.com.br" : profile === "cliente" ? "cliente@rondasmart.com.br" : "vigilante@rondasmart.com.br";
 
   async function enter() {
     setLoading(true);
@@ -171,7 +171,7 @@ export function LoginPage() {
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password: "rondasmart-demo" })
+        body: JSON.stringify({ email, password })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Falha ao entrar.");
@@ -193,14 +193,9 @@ export function LoginPage() {
               <h1 className="text-3xl font-black tracking-tight md:text-4xl">Seguranca monitorada em tempo real.</h1>
               <p className="mt-3 text-slate-500">Painel web, aplicativo PWA e monitoramento operacional em tempo real.</p>
             </div>
-            <div className="grid grid-cols-3 gap-2 rounded-lg bg-slate-100 p-1">
-              <button onClick={() => setProfile("master")} className={cn("rounded-md px-3 py-2 text-sm font-semibold", profile === "master" && "bg-white shadow-sm")}>Master</button>
-              <button onClick={() => setProfile("cliente")} className={cn("rounded-md px-3 py-2 text-sm font-semibold", profile === "cliente" && "bg-white shadow-sm")}>Cliente</button>
-              <button onClick={() => setProfile("vigilante")} className={cn("rounded-md px-3 py-2 text-sm font-semibold", profile === "vigilante" && "bg-white shadow-sm")}>Vigilante</button>
-            </div>
             <div className="space-y-3">
-              <Input value={email} readOnly aria-label="E-mail" />
-              <Input value="rondasmart-demo" readOnly type="password" aria-label="Senha" />
+              <Input value={email} onChange={(event) => setEmail(event.target.value)} aria-label="E-mail" autoComplete="email" />
+              <Input value={password} onChange={(event) => setPassword(event.target.value)} type="password" aria-label="Senha" autoComplete="current-password" />
               <Button className="w-full" size="lg" onClick={enter}>
                 {loading ? <Loader2 className="animate-spin" size={18} /> : <Shield size={18} />}
                 Entrar
@@ -964,7 +959,14 @@ function MobileShell({ title, children }: { title: string; children: React.React
 export function MobileHome() {
   const router = useRouter();
   const { toast, show } = useToast();
+  const [userName, setUserName] = useState("Usuario");
   const [starting, setStarting] = useState(false);
+
+  useEffect(() => {
+    apiJson<{ user: { name: string } | null }>("/api/auth/me")
+      .then((data) => setUserName(data.user?.name ?? "Usuario"))
+      .catch(() => setUserName("Usuario"));
+  }, []);
 
   async function startPatrol() {
     setStarting(true);
@@ -987,8 +989,8 @@ export function MobileHome() {
     <MobileShell title="Inicio">
       <ToastView toast={toast} />
       <div className="space-y-4">
-        <div><p className="text-sm font-bold text-blue-600">Ola, Joao</p><h1 className="text-2xl font-black">Status: Em Servico</h1></div>
-        <Card><CardContent><p className="text-sm text-slate-500">Condominio atual</p><p className="text-xl font-black">Condominio Jardim America</p><p className="mt-3 text-sm font-semibold text-slate-500">Turno: 07:00 as 19:00</p><p className="text-sm font-semibold text-blue-600">Proxima ronda: 09:00</p></CardContent></Card>
+        <div><p className="text-sm font-bold text-blue-600">Ola, {userName}</p><h1 className="text-2xl font-black">Status: Em Servico</h1></div>
+        <Card><CardContent><p className="text-sm text-slate-500">Operacao atual</p><p className="text-xl font-black">Ronda vinculada ao seu cadastro</p><p className="mt-3 text-sm font-semibold text-slate-500">Turno conforme escala cadastrada</p><p className="text-sm font-semibold text-blue-600">Inicie uma ronda para carregar os pontos</p></CardContent></Card>
         <Button size="lg" className="w-full py-6 text-lg" onClick={startPatrol} disabled={starting}>
           {starting ? <Loader2 className="animate-spin" /> : <Radio />}
           Iniciar Ronda
@@ -1381,12 +1383,27 @@ export function MobilePanico() {
 }
 
 export function MobilePerfil() {
+  const [user, setUser] = useState<{ name: string; email: string; role: string } | null>(null);
+
+  useEffect(() => {
+    apiJson<{ user: { name: string; email: string; role: string } | null }>("/api/auth/me")
+      .then((data) => setUser(data.user))
+      .catch(() => setUser(null));
+  }, []);
+
+  const initials = (user?.name ?? "Usuario")
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
     <MobileShell title="Perfil">
       <div className="space-y-4 text-center">
-        <div className="mx-auto grid h-24 w-24 place-items-center rounded-full bg-slate-950 text-3xl font-black text-white">JP</div>
-        <div><h1 className="text-2xl font-black">Joao Pereira</h1><p className="text-sm text-slate-500">Matricula RS-0042</p></div>
-        <Card><CardContent className="space-y-3 text-left text-sm font-semibold text-slate-600"><p>Telefone: 31 99910-1010</p><p>Condominio atual: Jardim America</p><p>Turno: 07:00 as 19:00</p><p>Status: Em Servico</p></CardContent></Card>
+        <div className="mx-auto grid h-24 w-24 place-items-center rounded-full bg-slate-950 text-3xl font-black text-white">{initials}</div>
+        <div><h1 className="text-2xl font-black">{user?.name ?? "Usuario logado"}</h1><p className="text-sm text-slate-500">{user?.email ?? "Carregando perfil..."}</p></div>
+        <Card><CardContent className="space-y-3 text-left text-sm font-semibold text-slate-600"><p>Perfil: {user?.role ?? "Carregando"}</p><p>Status: Em Servico</p><p>Dados operacionais carregados conforme cadastro do cliente.</p></CardContent></Card>
         <LogoutButton className="w-full" />
       </div>
     </MobileShell>
