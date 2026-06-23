@@ -920,16 +920,22 @@ export function MobileRonda() {
 function useCamera() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [cameraState, setCameraState] = useState<"idle" | "loading" | "on" | "fallback">("idle");
+  const [cameraError, setCameraError] = useState("");
 
   async function startCamera() {
     setCameraState("loading");
+    setCameraError("");
     try {
+      if (!window.isSecureContext) {
+        throw new Error("A camera em tempo real exige HTTPS no celular. Use o campo manual ou uma foto do QR Code por enquanto.");
+      }
       const stream = await navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" }, audio: false });
       if (!stream || !videoRef.current) throw new Error("Camera indisponivel");
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
       setCameraState("on");
-    } catch {
+    } catch (err) {
+      setCameraError(err instanceof Error ? err.message : "Nao foi possivel abrir a camera neste navegador.");
       setCameraState("fallback");
     }
   }
@@ -940,18 +946,29 @@ function useCamera() {
   }
 
   useEffect(() => stopCamera, []);
-  return { videoRef, cameraState, startCamera };
+  return { videoRef, cameraState, cameraError, startCamera };
 }
 
 export function MobileScanner() {
   const { toast, show } = useToast();
-  const { videoRef, cameraState, startCamera } = useCamera();
-  async function validateQr() {
+  const { videoRef, cameraState, cameraError, startCamera } = useCamera();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const scanningRef = useRef(false);
+  const [qrToken, setQrToken] = useState("RS-006");
+  const [validating, setValidating] = useState(false);
+
+  async function validateQr(nextToken = qrToken) {
+    const token = nextToken.trim().toUpperCase();
+    if (!token) {
+      show({ title: "Informe o QR Code", text: "Digite ou capture o codigo do ponto de ronda." });
+      return;
+    }
     try {
+      setValidating(true);
       const response = await fetch("/api/mobile/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ qrToken: "RS-006", notes: "Leitura simulada pelo scanner mobile" })
+        body: JSON.stringify({ qrToken: token, notes: "Leitura registrada pelo scanner mobile" })
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -965,8 +982,63 @@ export function MobileScanner() {
       show({ title: "QR Code validado", text: `${checkpointName} concluido e sincronizado com a central.` });
     } catch (err) {
       show({ title: "Leitura nao enviada", text: err instanceof Error ? err.message : "Tente novamente." });
+    } finally {
+      setValidating(false);
     }
   }
+
+  useEffect(() => {
+    if (cameraState !== "on") return;
+    const Detector = (window as any).BarcodeDetector;
+    if (!Detector) {
+      show({ title: "Leitor automatico indisponivel", text: "A camera abriu, mas este navegador nao possui leitor QR nativo. Use o campo Codigo QR." });
+      return;
+    }
+
+    let active = true;
+    const detector = new Detector({ formats: ["qr_code"] });
+
+    async function scanFrame() {
+      if (!active || scanningRef.current || !videoRef.current) return;
+      try {
+        const codes = await detector.detect(videoRef.current);
+        const rawValue = String(codes?.[0]?.rawValue ?? "").trim();
+        if (rawValue) {
+          scanningRef.current = true;
+          setQrToken(rawValue);
+          await validateQr(rawValue);
+          window.setTimeout(() => { scanningRef.current = false; }, 1800);
+        }
+      } catch {
+        // Alguns navegadores abrem a camera, mas bloqueiam a leitura frame a frame.
+      }
+      if (active) window.requestAnimationFrame(scanFrame);
+    }
+
+    window.requestAnimationFrame(scanFrame);
+    return () => { active = false; };
+  }, [cameraState]);
+
+  async function readQrFromFile(file: File) {
+    const Detector = (window as any).BarcodeDetector;
+    if (!Detector) {
+      show({ title: "Leitor de imagem indisponivel", text: "Este navegador nao consegue ler QR de foto. Digite o codigo impresso no ponto." });
+      return;
+    }
+    try {
+      const bitmap = await createImageBitmap(file);
+      const detector = new Detector({ formats: ["qr_code"] });
+      const codes = await detector.detect(bitmap);
+      const rawValue = String(codes?.[0]?.rawValue ?? "").trim();
+      bitmap.close?.();
+      if (!rawValue) throw new Error("Nenhum QR Code encontrado na imagem.");
+      setQrToken(rawValue);
+      await validateQr(rawValue);
+    } catch (err) {
+      show({ title: "QR nao encontrado", text: err instanceof Error ? err.message : "Tente outra foto ou digite o codigo." });
+    }
+  }
+
   return (
     <MobileShell title="Scanner QR Code">
       <ToastView toast={toast} />
@@ -975,13 +1047,28 @@ export function MobileScanner() {
           <video ref={videoRef} muted playsInline className={cn("absolute inset-0 h-full w-full object-cover", cameraState !== "on" && "hidden")} />
           {cameraState !== "on" && <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(37,99,235,.35),transparent_36%),linear-gradient(135deg,#020617,#1e293b)]" />}
           <div className="absolute inset-8 rounded-lg border-2 border-blue-400" />
-          <div className="scan-line absolute left-10 right-10 top-10 h-1 rounded-full bg-blue-400" />
-          <div className="absolute inset-x-0 bottom-8 text-center text-sm font-semibold text-white">Aponte para o QR Code do ponto de ronda</div>
-          <div className="absolute right-4 top-4 rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white">{cameraState === "on" ? "Camera ativa" : "Camera simulada"}</div>
+          {cameraState === "on" && <div className="scan-line absolute left-10 right-10 top-10 h-1 rounded-full bg-blue-400" />}
+          <div className="absolute inset-x-6 bottom-8 text-center text-sm font-semibold text-white">{cameraState === "on" ? "Aponte para o QR Code do ponto de ronda" : "Abra a camera ou informe o codigo do QR Code"}</div>
+          <div className="absolute right-4 top-4 rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white">{cameraState === "on" ? "Camera ativa" : cameraState === "loading" ? "Abrindo camera" : "Leitura manual"}</div>
         </div>
+        {cameraError && <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-700">{cameraError}</p>}
+        <Input value={qrToken} onChange={(event) => setQrToken(event.target.value.toUpperCase())} placeholder="Codigo QR, ex: RS-006" />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void readQrFromFile(file);
+            event.currentTarget.value = "";
+          }}
+        />
         <div className="grid grid-cols-2 gap-2">
           <Button variant="outline" onClick={startCamera} disabled={cameraState === "loading"}>{cameraState === "loading" ? <Loader2 className="animate-spin" size={16} /> : <Camera size={16} />}Abrir camera</Button>
-        <Button onClick={validateQr}><QrCode size={16} />Validar QR RS-006</Button>
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()}><Camera size={16} />Foto do QR</Button>
+          <Button className="col-span-2" onClick={() => validateQr()} disabled={validating}>{validating ? <Loader2 className="animate-spin" size={16} /> : <QrCode size={16} />}Validar codigo</Button>
         </div>
         <Link href="/mobile/ronda"><Button variant="secondary" className="w-full">Voltar para checklist</Button></Link>
       </div>
@@ -993,7 +1080,7 @@ export function MobileFoto() {
   const [captured, setCaptured] = useState(false);
   const [photo, setPhoto] = useState<string | null>(null);
   const { toast, show } = useToast();
-  const { videoRef, cameraState, startCamera } = useCamera();
+  const { videoRef, cameraState, cameraError, startCamera } = useCamera();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   function capturePhoto() {
     const canvas = canvasRef.current;
@@ -1003,8 +1090,10 @@ export function MobileFoto() {
       canvas.height = video.videoHeight || 480;
       canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
       setPhoto(canvas.toDataURL("image/png"));
+      setCaptured(true);
+      return;
     }
-    setCaptured(true);
+    show({ title: "Camera nao ativa", text: "Abra a camera primeiro ou use HTTPS para permitir captura em tempo real." });
   }
   return (
     <MobileShell title="Registro de foto">
@@ -1012,8 +1101,9 @@ export function MobileFoto() {
       <div className="space-y-4 text-center">
         <div className={cn("relative grid h-80 overflow-hidden rounded-lg", captured ? "bg-[linear-gradient(135deg,#bfdbfe,#f8fafc)]" : "bg-slate-900 text-white")}>
           {photo ? <img src={photo} alt="Foto capturada" className="h-full w-full object-cover" /> : <video ref={videoRef} muted playsInline className={cn("h-full w-full object-cover", cameraState !== "on" && "hidden")} />}
-          {!photo && cameraState !== "on" && <div className="grid place-items-center"><div><Camera className="mx-auto" size={48} /><p className="mt-3 font-semibold">{captured ? "Imagem simulada capturada" : "Capture uma evidencia do local"}</p><p className="mt-2 text-xs text-slate-300">Abra a camera ou use captura simulada.</p></div></div>}
+          {!photo && cameraState !== "on" && <div className="grid place-items-center"><div><Camera className="mx-auto" size={48} /><p className="mt-3 font-semibold">Capture uma evidencia do local</p><p className="mt-2 text-xs text-slate-300">A camera em tempo real pode exigir HTTPS no celular.</p></div></div>}
         </div>
+        {cameraError && <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-700">{cameraError}</p>}
         <canvas ref={canvasRef} className="hidden" />
         <Button variant="outline" className="w-full" onClick={startCamera} disabled={cameraState === "loading"}>{cameraState === "loading" ? <Loader2 className="animate-spin" size={16} /> : <Camera size={16} />}Abrir camera</Button>
         <button onClick={capturePhoto} className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-white ring-8 ring-slate-200"><span className="h-14 w-14 rounded-full bg-blue-600" /></button>
