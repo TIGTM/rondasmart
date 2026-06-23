@@ -55,6 +55,19 @@ import { cn } from "@/lib/utils";
 
 type Toast = { title: string; text: string };
 type FormValues = Record<string, string>;
+type MobileCheckpoint = {
+  id: string;
+  name: string;
+  location?: string | null;
+  qrToken: string;
+  status: string;
+  lastVisitAt?: string | null;
+  visitedAt?: string | null;
+};
+type MobileRondaData = {
+  patrol: { id: string; name: string; status: string; condominiumName?: string | null; startedAt?: string | null } | null;
+  checkpoints: MobileCheckpoint[];
+};
 
 async function apiJson<T>(url: string, options?: RequestInit) {
   const response = await fetch(url, options);
@@ -872,17 +885,37 @@ export function MobileHome() {
 
 export function MobileRonda() {
   const { toast, show } = useToast();
+  const router = useRouter();
   const [scanned, setScanned] = useState<string[]>([]);
+  const [rondaData, setRondaData] = useState<MobileRondaData | null>(null);
+  const [loading, setLoading] = useState(true);
   const [finishing, setFinishing] = useState(false);
-  useEffect(() => {
-    setScanned(JSON.parse(localStorage.getItem("ronda-smart-scanned") ?? "[]") as string[]);
-  }, []);
+
+  async function loadRonda() {
+    setLoading(true);
+    try {
+      const data = await apiJson<MobileRondaData>("/api/mobile/ronda");
+      setRondaData(data);
+      const visited = data.checkpoints.filter((item) => item.visitedAt).map((item) => item.name);
+      localStorage.setItem("ronda-smart-scanned", JSON.stringify(visited));
+      setScanned(visited);
+    } catch {
+      setScanned(JSON.parse(localStorage.getItem("ronda-smart-scanned") ?? "[]") as string[]);
+      setRondaData(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { void loadRonda(); }, []);
+
   async function finishPatrol() {
     setFinishing(true);
     try {
       await apiJson("/api/patrols/finish", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       localStorage.removeItem("ronda-smart-scanned");
       setScanned([]);
+      setRondaData((current) => current ? { ...current, patrol: current.patrol ? { ...current.patrol, status: "Finalizada" } : null } : current);
       show({ title: "Ronda finalizada", text: "Status sincronizado com a central." });
     } catch (err) {
       show({ title: "Nao foi possivel finalizar", text: err instanceof Error ? err.message : "Tente novamente." });
@@ -890,16 +923,26 @@ export function MobileRonda() {
       setFinishing(false);
     }
   }
-  const checklist = mobileChecklist.map((item) => ({ ...item, done: item.done || scanned.includes(item.label) }));
+
+  const checklist = rondaData?.checkpoints.length
+    ? rondaData.checkpoints.map((item) => ({
+        label: item.name,
+        location: item.location,
+        qrToken: item.qrToken,
+        done: Boolean(item.visitedAt) || scanned.includes(item.name)
+      }))
+    : mobileChecklist.map((item) => ({ ...item, location: null, qrToken: "", done: item.done || scanned.includes(item.label) }));
   const doneCount = checklist.filter((item) => item.done).length;
-  const progress = Math.round((doneCount / checklist.length) * 100);
+  const progress = checklist.length ? Math.round((doneCount / checklist.length) * 100) : 0;
+  const currentPatrol = rondaData?.patrol;
   return (
     <MobileShell title="Ronda em execucao">
       <ToastView toast={toast} />
       <div className="space-y-4">
-        <Card><CardContent><div className="flex justify-between"><div><p className="text-sm text-slate-500">Ronda Jardim America</p><h1 className="text-2xl font-black">00:32:18</h1></div><StatusBadge status="Em andamento" /></div><div className="mt-4 h-3 rounded-full bg-slate-100"><div className="h-3 rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} /></div><p className="mt-2 text-sm font-semibold text-slate-500">{doneCount} concluidos, {checklist.length - doneCount} pendentes</p></CardContent></Card>
-        <Card><CardContent className="space-y-3">{checklist.map((item) => <div key={item.label} className="flex items-center gap-3 rounded-lg bg-slate-50 p-3 font-semibold"><span className={cn("grid h-6 w-6 place-items-center rounded-full", item.done ? "bg-green-500 text-white" : "bg-white text-slate-400 ring-1 ring-slate-200")}>{item.done ? <Check size={14} /> : "o"}</span>{item.label}</div>)}</CardContent></Card>
-        <div className="grid grid-cols-2 gap-3"><Link href="/mobile/scanner"><Button className="w-full"><ScanLine size={16} />Escanear QR</Button></Link><Link href="/mobile/foto"><Button variant="outline" className="w-full"><Camera size={16} />Foto</Button></Link><Link href="/mobile/ocorrencia"><Button variant="outline" className="w-full"><ShieldAlert size={16} />Ocorrencia</Button></Link><Button variant="secondary" onClick={finishPatrol} disabled={finishing}>{finishing ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}Finalizar</Button></div>
+        <Card><CardContent><div className="flex justify-between gap-3"><div><p className="text-sm text-slate-500">{currentPatrol?.condominiumName ?? "Condominio Jardim America"}</p><h1 className="text-2xl font-black">{currentPatrol?.name ?? "Ronda em andamento"}</h1></div><StatusBadge status={currentPatrol?.status ?? "Em andamento"} /></div><div className="mt-4 h-3 rounded-full bg-slate-100"><div className="h-3 rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} /></div><p className="mt-2 text-sm font-semibold text-slate-500">{loading ? "Carregando pontos..." : `${doneCount} concluidos, ${checklist.length - doneCount} pendentes`}</p></CardContent></Card>
+        <Card><CardContent className="space-y-3">{checklist.map((item) => <div key={item.label} className="flex items-center gap-3 rounded-lg bg-slate-50 p-3 font-semibold"><span className={cn("grid h-6 w-6 place-items-center rounded-full", item.done ? "bg-green-500 text-white" : "bg-white text-slate-400 ring-1 ring-slate-200")}>{item.done ? <Check size={14} /> : "o"}</span><span className="flex-1"><span className="block">{item.label}</span>{item.qrToken && <span className="block text-xs font-bold text-blue-600">{item.qrToken}</span>}</span></div>)}</CardContent></Card>
+        <div className="grid grid-cols-2 gap-3"><Link href="/mobile/scanner"><Button className="w-full"><ScanLine size={16} />Escanear QR</Button></Link><Link href="/mobile/foto"><Button variant="outline" className="w-full"><Camera size={16} />Foto</Button></Link><Link href="/mobile/ocorrencia"><Button variant="outline" className="w-full"><ShieldAlert size={16} />Ocorrencia</Button></Link><Button variant="secondary" onClick={finishPatrol} disabled={finishing || !currentPatrol}>{finishing ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}Finalizar</Button></div>
+        {!currentPatrol && !loading && <Button className="w-full" onClick={() => router.push("/mobile/home")}><Radio size={16} />Iniciar nova ronda</Button>}
         <Link href="/mobile/panico"><Button variant="danger" className="w-full"><Siren size={18} />Botao de panico</Button></Link>
       </div>
     </MobileShell>
@@ -940,12 +983,14 @@ function useCamera() {
 
 export function MobileScanner() {
   const { toast, show } = useToast();
+  const router = useRouter();
   const { videoRef, cameraState, cameraError, startCamera } = useCamera();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scannerCanvasRef = useRef<HTMLCanvasElement>(null);
   const scanningRef = useRef(false);
   const [qrToken, setQrToken] = useState("RS-006");
   const [validating, setValidating] = useState(false);
+  const [lastScan, setLastScan] = useState<{ checkpointName: string; completed: number; total: number; patrolId: string } | null>(null);
 
   async function validateQr(nextToken = qrToken) {
     const token = nextToken.trim().toUpperCase();
@@ -966,11 +1011,21 @@ export function MobileScanner() {
       }
       const data = await response.json();
       const checkpointName = data.checkpoint?.name ?? "Garagem G1";
-      const current = JSON.parse(localStorage.getItem("ronda-smart-scanned") ?? "[]") as string[];
-      const next = Array.from(new Set([...current, checkpointName]));
+      const visitedNames = Array.isArray(data.visits)
+        ? data.visits.filter((visit: any) => visit.visitedAt).map((visit: any) => String(visit.name))
+        : [checkpointName];
+      const next = Array.from(new Set(visitedNames));
       localStorage.setItem("ronda-smart-scanned", JSON.stringify(next));
+      scanningRef.current = true;
+      setLastScan({
+        checkpointName,
+        completed: next.length,
+        total: Array.isArray(data.visits) ? data.visits.length : next.length,
+        patrolId: data.patrolId
+      });
       show({ title: "QR Code validado", text: `${checkpointName} concluido e sincronizado com a central.` });
     } catch (err) {
+      scanningRef.current = false;
       show({ title: "Leitura nao enviada", text: err instanceof Error ? err.message : "Tente novamente." });
     } finally {
       setValidating(false);
@@ -1059,6 +1114,23 @@ export function MobileScanner() {
           <div className="absolute right-4 top-4 rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white">{cameraState === "on" ? "Camera ativa" : cameraState === "loading" ? "Abrindo camera" : "Leitura manual"}</div>
         </div>
         {cameraError && <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-700">{cameraError}</p>}
+        {lastScan && (
+          <Card className="border-green-200 bg-green-50">
+            <CardContent>
+              <div className="flex gap-3">
+                <div className="grid h-10 w-10 place-items-center rounded-lg bg-green-500 text-white"><Check size={20} /></div>
+                <div className="flex-1">
+                  <p className="font-black text-green-900">{lastScan.checkpointName} validado</p>
+                  <p className="mt-1 text-sm font-semibold text-green-700">{lastScan.completed} de {lastScan.total} pontos concluidos nesta ronda.</p>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <Button variant="outline" onClick={() => { setLastScan(null); scanningRef.current = false; }}>Ler outro</Button>
+                <Button onClick={() => router.push("/mobile/ronda")}>Continuar</Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
         <Input value={qrToken} onChange={(event) => setQrToken(event.target.value.toUpperCase())} placeholder="Codigo QR, ex: RS-006" />
         <input
           ref={fileInputRef}
