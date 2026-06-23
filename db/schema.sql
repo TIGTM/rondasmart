@@ -1,7 +1,21 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+CREATE TABLE IF NOT EXISTS companies (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT UNIQUE NOT NULL,
+  document TEXT,
+  contact_name TEXT,
+  contact_email TEXT,
+  contact_phone TEXT,
+  plan TEXT NOT NULL DEFAULT 'Essencial',
+  status TEXT NOT NULL DEFAULT 'Ativo',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS condominiums (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID REFERENCES companies(id) ON DELETE CASCADE,
   name TEXT UNIQUE NOT NULL,
   document TEXT,
   address TEXT,
@@ -17,10 +31,11 @@ CREATE TABLE IF NOT EXISTS condominiums (
 
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID REFERENCES companies(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('ADMIN', 'MANAGER', 'GUARD')),
+  role TEXT NOT NULL CHECK (role IN ('SUPER_ADMIN', 'CLIENT_ADMIN', 'ADMIN', 'MANAGER', 'GUARD')),
   phone TEXT,
   registration TEXT,
   shift TEXT,
@@ -88,7 +103,25 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id);
+CREATE INDEX IF NOT EXISTS idx_condominiums_company ON condominiums(company_id);
 CREATE INDEX IF NOT EXISTS idx_checkpoints_condominium ON checkpoints(condominium_id);
 CREATE INDEX IF NOT EXISTS idx_patrols_status ON patrols(status);
 CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status);
 CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
+
+ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.check_constraints
+    WHERE constraint_name = 'users_role_check'
+  ) THEN
+    ALTER TABLE users DROP CONSTRAINT users_role_check;
+  END IF;
+END $$;
+
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('SUPER_ADMIN', 'CLIENT_ADMIN', 'ADMIN', 'MANAGER', 'GUARD'));

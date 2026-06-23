@@ -14,7 +14,8 @@ export type SessionUser = {
   id: string;
   name: string;
   email: string;
-  role: "ADMIN" | "MANAGER" | "GUARD";
+  role: "SUPER_ADMIN" | "CLIENT_ADMIN" | "ADMIN" | "MANAGER" | "GUARD";
+  companyId?: string | null;
   condominiumId?: string | null;
 };
 
@@ -71,7 +72,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   if (!token) return null;
 
   const result = await query(
-    `SELECT u.id, u.name, u.email, u.role, u.condominium_id
+    `SELECT u.id, u.name, u.email, u.role, u.company_id, u.condominium_id
      FROM sessions s
      JOIN users u ON u.id = s.user_id
      WHERE s.token_hash = $1 AND s.expires_at > now()

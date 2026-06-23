@@ -10,14 +10,22 @@ Esta base saiu do prototipo e agora possui:
 - Sessao por cookie HTTP-only
 - Login real com usuarios seedados
 - APIs reais para condominios, vigilantes, pontos, rondas e ocorrencias
+- Estrutura multi-tenant com painel master da plataforma e painel do cliente
 - Docker Compose com app + banco
 
 ## Credenciais iniciais
 
-Administrador:
+Master Ronda Smart:
 
 ```text
 admin@rondasmart.com.br
+rondasmart-demo
+```
+
+Administrador do cliente demo:
+
+```text
+cliente@rondasmart.com.br
 rondasmart-demo
 ```
 
@@ -92,6 +100,8 @@ docker compose up -d --build
 
 ## Observacoes importantes
 
+- O master acessa `/master/clientes` para cadastrar clientes SaaS e usuarios administradores.
+- O admin do cliente acessa `/admin/dashboard` e visualiza apenas dados da propria empresa.
 - Fotos ainda sao armazenadas como URL/metadado; o proximo passo e adicionar MinIO/S3.
 - Camera real no celular exige HTTPS em navegadores modernos.
 - O schema inicial esta em `db/schema.sql`.

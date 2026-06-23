@@ -14,11 +14,38 @@ function hashPassword(password, salt = randomBytes(16).toString("hex")) {
   return `pbkdf2_sha256$120000$${salt}$${hash}`;
 }
 
+async function upsertCompany(client, data) {
+  const result = await client.query(
+    `INSERT INTO companies (name, document, contact_name, contact_email, contact_phone, plan, status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
+     ON CONFLICT (name) DO UPDATE SET
+       document = EXCLUDED.document,
+       contact_name = EXCLUDED.contact_name,
+       contact_email = EXCLUDED.contact_email,
+       contact_phone = EXCLUDED.contact_phone,
+       plan = EXCLUDED.plan,
+       status = EXCLUDED.status,
+       updated_at = now()
+     RETURNING id`,
+    [
+      data.name,
+      data.document,
+      data.contactName,
+      data.contactEmail,
+      data.contactPhone,
+      data.plan,
+      data.status
+    ]
+  );
+  return result.rows[0].id;
+}
+
 async function upsertCondominium(client, data) {
   const result = await client.query(
-    `INSERT INTO condominiums (name, document, address, city, district, manager_name, manager_phone, manager_email, status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    `INSERT INTO condominiums (company_id, name, document, address, city, district, manager_name, manager_phone, manager_email, status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
      ON CONFLICT (name) DO UPDATE SET
+       company_id = EXCLUDED.company_id,
        city = EXCLUDED.city,
        district = EXCLUDED.district,
        manager_name = EXCLUDED.manager_name,
@@ -26,6 +53,7 @@ async function upsertCondominium(client, data) {
        updated_at = now()
      RETURNING id`,
     [
+      data.companyId,
       data.name,
       data.document,
       data.address,
@@ -42,9 +70,10 @@ async function upsertCondominium(client, data) {
 
 async function upsertUser(client, data) {
   await client.query(
-    `INSERT INTO users (name, email, password_hash, role, phone, registration, shift, status, condominium_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    `INSERT INTO users (company_id, name, email, password_hash, role, phone, registration, shift, status, condominium_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
      ON CONFLICT (email) DO UPDATE SET
+       company_id = EXCLUDED.company_id,
        name = EXCLUDED.name,
        role = EXCLUDED.role,
        phone = EXCLUDED.phone,
@@ -53,6 +82,7 @@ async function upsertUser(client, data) {
        condominium_id = EXCLUDED.condominium_id,
        updated_at = now()`,
     [
+      data.companyId,
       data.name,
       data.email,
       hashPassword(data.password),
@@ -74,7 +104,28 @@ async function main() {
     await client.query("BEGIN");
     await client.query(schema);
 
+    const platformCompany = await upsertCompany(client, {
+      name: "Ronda Smart Plataforma",
+      document: "00.000.000/0001-00",
+      contactName: "Administrador Ronda Smart",
+      contactEmail: "admin@rondasmart.com.br",
+      contactPhone: "31 0000-0000",
+      plan: "Interno",
+      status: "Ativo"
+    });
+
+    const demoCompany = await upsertCompany(client, {
+      name: "GTM Alimentos",
+      document: "11.111.111/0001-11",
+      contactName: "Cliente Administrador",
+      contactEmail: "cliente@rondasmart.com.br",
+      contactPhone: "31 3333-0001",
+      plan: "Profissional",
+      status: "Ativo"
+    });
+
     const jardim = await upsertCondominium(client, {
+      companyId: demoCompany,
       name: "Condominio Jardim America",
       document: "12.345.678/0001-90",
       address: "Rua das Acacias, 120",
@@ -86,6 +137,7 @@ async function main() {
       status: "Ativo"
     });
     const monte = await upsertCondominium(client, {
+      companyId: demoCompany,
       name: "Residencial Monte Verde",
       document: "23.456.789/0001-10",
       address: "Alameda Verde, 45",
@@ -97,6 +149,7 @@ async function main() {
       status: "Ativo"
     });
     const solar = await upsertCondominium(client, {
+      companyId: demoCompany,
       name: "Edificio Solar das Palmeiras",
       document: "34.567.890/0001-20",
       address: "Av. Joao Cesar, 980",
@@ -119,8 +172,19 @@ async function main() {
       name: "Administrador Ronda Smart",
       email: "admin@rondasmart.com.br",
       password: "rondasmart-demo",
-      role: "ADMIN",
+      role: "SUPER_ADMIN",
       status: "Disponivel",
+      companyId: platformCompany,
+      condominiumId: null
+    });
+
+    await upsertUser(client, {
+      name: "Administrador do Cliente",
+      email: "cliente@rondasmart.com.br",
+      password: "rondasmart-demo",
+      role: "CLIENT_ADMIN",
+      status: "Disponivel",
+      companyId: demoCompany,
       condominiumId: null
     });
 
@@ -130,6 +194,7 @@ async function main() {
         email,
         password: "rondasmart-demo",
         role,
+        companyId: demoCompany,
         phone,
         registration,
         shift,

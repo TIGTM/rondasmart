@@ -2,7 +2,7 @@ import { requireSession } from "@/lib/auth";
 import { query, rowsToCamel } from "@/lib/db";
 
 export async function POST(request: Request) {
-  const { user, response } = await requireSession(["ADMIN", "MANAGER", "GUARD"]);
+  const { user, response } = await requireSession(["SUPER_ADMIN", "CLIENT_ADMIN", "ADMIN", "MANAGER", "GUARD"]);
   if (response) return response;
 
   const body = await request.json().catch(() => ({}));
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     `UPDATE patrols
      SET status = 'Finalizada', finished_at = now(), updated_at = now()
      WHERE id = $1
-       AND ($2::text IN ('ADMIN','MANAGER') OR guard_id = $3)
+       AND ($2::text IN ('SUPER_ADMIN','CLIENT_ADMIN','ADMIN','MANAGER') OR guard_id = $3)
      RETURNING *`,
     [patrolId, user?.role, user?.id]
   );

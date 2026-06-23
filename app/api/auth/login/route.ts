@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   }
 
   const result = await query(
-    `SELECT id, name, email, role, password_hash, condominium_id
+    `SELECT id, name, email, role, password_hash, company_id, condominium_id
      FROM users
      WHERE lower(email) = $1
      LIMIT 1`,
@@ -29,6 +29,7 @@ export async function POST(request: Request) {
     name: user.name,
     email: user.email,
     role: user.role,
+    company_id: user.company_id,
     condominium_id: user.condominium_id
   });
 

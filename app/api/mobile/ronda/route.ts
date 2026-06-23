@@ -2,7 +2,7 @@ import { requireSession } from "@/lib/auth";
 import { query, rowsToCamel } from "@/lib/db";
 
 export async function GET() {
-  const { user, response } = await requireSession(["GUARD", "ADMIN"]);
+  const { user, response } = await requireSession(["GUARD", "CLIENT_ADMIN", "ADMIN", "SUPER_ADMIN"]);
   if (response) return response;
 
   const active = await query(

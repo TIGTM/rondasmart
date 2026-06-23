@@ -159,10 +159,10 @@ function InstallBanner() {
 export function LoginPage() {
   const router = useRouter();
   const { toast, show } = useToast();
-  const [profile, setProfile] = useState<"admin" | "vigilante">("admin");
+  const [profile, setProfile] = useState<"master" | "cliente" | "vigilante">("master");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const email = profile === "admin" ? "admin@rondasmart.com.br" : "vigilante@rondasmart.com.br";
+  const email = profile === "master" ? "admin@rondasmart.com.br" : profile === "cliente" ? "cliente@rondasmart.com.br" : "vigilante@rondasmart.com.br";
 
   async function enter() {
     setLoading(true);
@@ -175,7 +175,7 @@ export function LoginPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Falha ao entrar.");
-      router.push(data.user.role === "GUARD" ? "/mobile/home" : "/admin/dashboard");
+      router.push(data.user.role === "GUARD" ? "/mobile/home" : data.user.role === "SUPER_ADMIN" ? "/master/clientes" : "/admin/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao entrar.");
     } finally {
@@ -193,8 +193,9 @@ export function LoginPage() {
               <h1 className="text-3xl font-black tracking-tight md:text-4xl">Seguranca monitorada em tempo real.</h1>
               <p className="mt-3 text-slate-500">Painel web, aplicativo PWA e monitoramento operacional em tempo real.</p>
             </div>
-            <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
-              <button onClick={() => setProfile("admin")} className={cn("rounded-md px-3 py-2 text-sm font-semibold", profile === "admin" && "bg-white shadow-sm")}>Administrador</button>
+            <div className="grid grid-cols-3 gap-2 rounded-lg bg-slate-100 p-1">
+              <button onClick={() => setProfile("master")} className={cn("rounded-md px-3 py-2 text-sm font-semibold", profile === "master" && "bg-white shadow-sm")}>Master</button>
+              <button onClick={() => setProfile("cliente")} className={cn("rounded-md px-3 py-2 text-sm font-semibold", profile === "cliente" && "bg-white shadow-sm")}>Cliente</button>
               <button onClick={() => setProfile("vigilante")} className={cn("rounded-md px-3 py-2 text-sm font-semibold", profile === "vigilante" && "bg-white shadow-sm")}>Vigilante</button>
             </div>
             <div className="space-y-3">
@@ -499,6 +500,122 @@ function FormModal({
         </div>
       )}
     </>
+  );
+}
+
+function MasterLayout({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-slate-200 bg-white p-5 lg:block">
+        <Logo />
+        <nav className="mt-8 space-y-1">
+          <Link href="/master/clientes" className="flex items-center gap-3 rounded-lg bg-slate-950 px-3 py-2.5 text-sm font-semibold text-white">
+            <BuildingIcon />
+            Clientes
+          </Link>
+          <Link href="/admin/dashboard" className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100">
+            <Radio size={18} />
+            Operacao
+          </Link>
+        </nav>
+      </aside>
+      <div className="lg:pl-72">
+        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur md:px-7">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase text-blue-600">Painel master</p>
+              <h1 className="text-xl font-black tracking-tight md:text-2xl">{title}</h1>
+            </div>
+            <LogoutButton />
+          </div>
+        </header>
+        <main className="p-4 md:p-7">{children}</main>
+      </div>
+    </div>
+  );
+}
+
+function BuildingIcon() {
+  return <Home size={18} />;
+}
+
+export function MasterClientesPage() {
+  const { toast, show } = useToast();
+  const [companies, setCompanies] = useState<any[]>([]);
+
+  async function loadCompanies() {
+    const data = await apiJson<{ companies: any[] }>("/api/platform/companies");
+    setCompanies(data.companies);
+  }
+
+  useEffect(() => { void loadCompanies().catch(() => setCompanies([])); }, []);
+
+  async function createCompany(values: FormValues) {
+    await apiJson("/api/platform/companies", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: values.name,
+        document: values.document,
+        contactName: values.contactName,
+        contactEmail: values.contactEmail,
+        contactPhone: values.contactPhone,
+        plan: values.plan,
+        adminName: values.adminName,
+        adminEmail: values.adminEmail,
+        adminPassword: values.adminPassword || "rondasmart-demo"
+      })
+    });
+    show({ title: "Cliente cadastrado", text: "Cliente e usuario administrador criados com sucesso." });
+    await loadCompanies();
+  }
+
+  return (
+    <MasterLayout title="Clientes da plataforma">
+      <ToastView toast={toast} />
+      <div className="mb-4 flex justify-end">
+        <FormModal title="Novo cliente SaaS" button="Cadastrar Cliente" submitLabel="Salvar cliente" onSubmit={createCompany}>
+          <Input name="name" placeholder="Nome da empresa cliente" required />
+          <Input name="document" placeholder="CNPJ/Documento" />
+          <Input name="contactName" placeholder="Contato principal" />
+          <Input name="contactEmail" placeholder="E-mail do contato" type="email" />
+          <Input name="contactPhone" placeholder="Telefone" />
+          <Select name="plan" defaultValue="Profissional">
+            <option>Essencial</option>
+            <option>Profissional</option>
+            <option>Enterprise</option>
+          </Select>
+          <div className="my-2 border-t border-slate-100 pt-3 text-sm font-black text-slate-500">Administrador do cliente</div>
+          <Input name="adminName" placeholder="Nome do admin do cliente" required />
+          <Input name="adminEmail" placeholder="E-mail de acesso" type="email" required />
+          <Input name="adminPassword" placeholder="Senha inicial" defaultValue="rondasmart-demo" />
+        </FormModal>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {companies.map((company) => (
+          <Card key={company.id}>
+            <CardContent>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-black">{company.name}</h2>
+                  <p className="text-sm font-semibold text-slate-500">{company.document ?? "Sem documento"}</p>
+                </div>
+                <StatusBadge status={company.status} />
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                <MiniStat label="Plano" value={company.plan} />
+                <MiniStat label="Condom." value={String(company.condominiumsCount ?? 0)} />
+                <MiniStat label="Vigias" value={String(company.guardsCount ?? 0)} />
+              </div>
+              <div className="mt-4 space-y-1 text-sm font-semibold text-slate-500">
+                <p>{company.contactName ?? "Contato nao informado"}</p>
+                <p>{company.contactEmail ?? "E-mail nao informado"}</p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </MasterLayout>
   );
 }
 
