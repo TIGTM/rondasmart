@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import jsQR from "jsqr";
+import { QRCodeSVG } from "qrcode.react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -638,24 +640,11 @@ export function VigilantesPage() {
   );
 }
 
-function makeQrCells(seed: string, size = 9) {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  return Array.from({ length: size * size }, (_, index) => {
-    const row = Math.floor(index / size);
-    const col = index % size;
-    const finder = (row < 3 && col < 3) || (row < 3 && col > size - 4) || (row > size - 4 && col < 3);
-    if (finder) return true;
-    return ((hash >> ((index + row + col) % 24)) + index + row * 3 + col * 5) % 3 !== 0;
-  });
-}
-
 function QRPattern({ code = "RS-001", large = false }: { code?: string; large?: boolean }) {
-  const size = large ? 11 : 7;
-  const cells = makeQrCells(code, size);
+  const size = large ? 224 : 96;
   return (
-    <div className={cn("grid rounded-lg bg-white p-2 ring-1 ring-slate-200", large ? "h-56 w-56 gap-1" : "h-24 w-24 gap-1")} style={{ gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))` }}>
-      {cells.map((on, i) => <span key={i} className={cn("rounded-[2px]", on ? "bg-slate-950" : "bg-slate-100")} />)}
+    <div className={cn("grid place-items-center rounded-lg bg-white p-2 ring-1 ring-slate-200", large ? "h-56 w-56" : "h-24 w-24")}>
+      <QRCodeSVG value={code} size={size - 16} level="M" includeMargin bgColor="#ffffff" fgColor="#020617" />
     </div>
   );
 }
@@ -953,6 +942,7 @@ export function MobileScanner() {
   const { toast, show } = useToast();
   const { videoRef, cameraState, cameraError, startCamera } = useCamera();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scannerCanvasRef = useRef<HTMLCanvasElement>(null);
   const scanningRef = useRef(false);
   const [qrToken, setQrToken] = useState("RS-006");
   const [validating, setValidating] = useState(false);
@@ -989,20 +979,26 @@ export function MobileScanner() {
 
   useEffect(() => {
     if (cameraState !== "on") return;
-    const Detector = (window as any).BarcodeDetector;
-    if (!Detector) {
-      show({ title: "Leitor automatico indisponivel", text: "A camera abriu, mas este navegador nao possui leitor QR nativo. Use o campo Codigo QR." });
-      return;
-    }
-
     let active = true;
-    const detector = new Detector({ formats: ["qr_code"] });
 
     async function scanFrame() {
-      if (!active || scanningRef.current || !videoRef.current) return;
+      if (!active || scanningRef.current || !videoRef.current || !scannerCanvasRef.current) return;
       try {
-        const codes = await detector.detect(videoRef.current);
-        const rawValue = String(codes?.[0]?.rawValue ?? "").trim();
+        const video = videoRef.current;
+        const canvas = scannerCanvasRef.current;
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+        if (width < 80 || height < 80) {
+          window.requestAnimationFrame(scanFrame);
+          return;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        context?.drawImage(video, 0, 0, width, height);
+        const imageData = context?.getImageData(0, 0, width, height);
+        const rawValue = imageData ? String(jsQR(imageData.data, width, height)?.data ?? "").trim() : "";
         if (rawValue) {
           scanningRef.current = true;
           setQrToken(rawValue);
@@ -1010,7 +1006,7 @@ export function MobileScanner() {
           window.setTimeout(() => { scanningRef.current = false; }, 1800);
         }
       } catch {
-        // Alguns navegadores abrem a camera, mas bloqueiam a leitura frame a frame.
+        // O proximo frame tenta novamente; isso evita travar a camera em leituras ruins.
       }
       if (active) window.requestAnimationFrame(scanFrame);
     }
@@ -1020,17 +1016,28 @@ export function MobileScanner() {
   }, [cameraState]);
 
   async function readQrFromFile(file: File) {
-    const Detector = (window as any).BarcodeDetector;
-    if (!Detector) {
-      show({ title: "Leitor de imagem indisponivel", text: "Este navegador nao consegue ler QR de foto. Digite o codigo impresso no ponto." });
-      return;
-    }
     try {
-      const bitmap = await createImageBitmap(file);
-      const detector = new Detector({ formats: ["qr_code"] });
-      const codes = await detector.detect(bitmap);
-      const rawValue = String(codes?.[0]?.rawValue ?? "").trim();
-      bitmap.close?.();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("Nao foi possivel abrir a imagem."));
+        reader.readAsDataURL(file);
+      });
+      const rawValue = await new Promise<string>((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = image.naturalWidth;
+          canvas.height = image.naturalHeight;
+          const context = canvas.getContext("2d", { willReadFrequently: true });
+          context?.drawImage(image, 0, 0);
+          const imageData = context?.getImageData(0, 0, canvas.width, canvas.height);
+          const value = imageData ? String(jsQR(imageData.data, canvas.width, canvas.height)?.data ?? "").trim() : "";
+          resolve(value);
+        };
+        image.onerror = () => reject(new Error("Nao foi possivel ler a foto."));
+        image.src = dataUrl;
+      });
       if (!rawValue) throw new Error("Nenhum QR Code encontrado na imagem.");
       setQrToken(rawValue);
       await validateQr(rawValue);
@@ -1065,6 +1072,7 @@ export function MobileScanner() {
             event.currentTarget.value = "";
           }}
         />
+        <canvas ref={scannerCanvasRef} className="hidden" />
         <div className="grid grid-cols-2 gap-2">
           <Button variant="outline" onClick={startCamera} disabled={cameraState === "loading"}>{cameraState === "loading" ? <Loader2 className="animate-spin" size={16} /> : <Camera size={16} />}Abrir camera</Button>
           <Button variant="outline" onClick={() => fileInputRef.current?.click()}><Camera size={16} />Foto do QR</Button>
