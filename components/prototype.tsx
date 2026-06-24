@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Download,
   FileSpreadsheet,
+  FileSignature,
   Home,
   Loader2,
   LogOut,
@@ -22,6 +23,7 @@ import {
   Menu,
   Phone,
   Plus,
+  Printer,
   QrCode,
   Radio,
   ScanLine,
@@ -519,16 +521,21 @@ function FormModal({
   );
 }
 
-function MasterLayout({ title, children }: { title: string; children: React.ReactNode }) {
+export function MasterLayout({ title, children }: { title: string; children: React.ReactNode }) {
+  const pathname = usePathname();
+  const masterLinks = [
+    { href: "/master/clientes", label: "Clientes", icon: BuildingIcon },
+    { href: "/master/contratos", label: "Contratos", icon: FileSignature }
+  ];
   return (
     <div className="min-h-screen bg-slate-50">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-slate-200 bg-white p-5 lg:block">
         <Logo />
         <nav className="mt-8 space-y-1">
-          <Link href="/master/clientes" className="flex items-center gap-3 rounded-lg bg-slate-950 px-3 py-2.5 text-sm font-semibold text-white">
-            <BuildingIcon />
-            Clientes
-          </Link>
+          {masterLinks.map((item) => {
+            const Icon = item.icon;
+            return <Link key={item.href} href={item.href} className={cn("flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold", pathname === item.href ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-100")}><Icon size={18} />{item.label}</Link>;
+          })}
           <Link href="/admin/dashboard" className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100">
             <Radio size={18} />
             Operacao
@@ -544,6 +551,9 @@ function MasterLayout({ title, children }: { title: string; children: React.Reac
             </div>
             <LogoutButton />
           </div>
+          <nav className="mt-3 flex gap-2 overflow-x-auto lg:hidden">
+            {masterLinks.map((item) => <Link key={item.href} href={item.href} className={cn("whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold", pathname === item.href ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-600")}>{item.label}</Link>)}
+          </nav>
         </header>
         <main className="p-4 md:p-7">{children}</main>
       </div>
@@ -551,8 +561,8 @@ function MasterLayout({ title, children }: { title: string; children: React.Reac
   );
 }
 
-function BuildingIcon() {
-  return <Home size={18} />;
+function BuildingIcon({ size = 18 }: { size?: number }) {
+  return <Home size={size} />;
 }
 
 export function MasterClientesPage() {
@@ -839,13 +849,52 @@ export function PontosPage() {
   const rows = dbPontos.map((p) => ({
     nome: p.name,
     localizacao: p.location,
+    condominio: p.condominiumName,
     status: p.status,
     ultimaVisita: p.lastVisitAt ? new Date(p.lastVisitAt).toLocaleString("pt-BR") : "Sem visita",
     codigo: p.qrToken
   }));
+
+  function printQr(point: { nome: string; localizacao?: string | null; condominio?: string | null; codigo: string }) {
+    const svg = document.querySelector("[data-printable-qr] svg")?.outerHTML;
+    if (!svg) return;
+    const escape = (value?: string | null) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[character] ?? character);
+    const popup = window.open("", "_blank", "width=720,height=900");
+    if (!popup) return;
+    popup.document.write(`<!doctype html>
+      <html lang="pt-BR"><head><meta charset="utf-8"><title>QR ${escape(point.codigo)}</title>
+      <style>
+        @page{size:A4;margin:18mm}*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;color:#0f172a}
+        .sheet{min-height:240mm;display:grid;place-items:center}.label{width:125mm;border:2px solid #0f172a;border-radius:8px;padding:12mm;text-align:center}
+        .brand{font-size:15px;font-weight:700;color:#2563eb;text-transform:uppercase}.name{font-size:28px;font-weight:800;margin:8px 0}
+        .meta{font-size:15px;color:#475569;margin:5px 0}.qr{display:flex;justify-content:center;margin:12mm 0}.qr svg{width:78mm;height:78mm}
+        .code{font:700 20px monospace;letter-spacing:2px;background:#f1f5f9;padding:10px;border-radius:6px}
+        .hint{font-size:12px;color:#64748b;margin-top:10px}
+      </style></head><body><main class="sheet"><section class="label">
+      <div class="brand">Ronda Smart</div><div class="name">${escape(point.nome)}</div>
+      <div class="meta">${escape(point.condominio)}</div><div class="meta">${escape(point.localizacao)}</div>
+      <div class="qr">${svg}</div><div class="code">${escape(point.codigo)}</div>
+      <div class="hint">Aponte a camera do aplicativo Ronda Smart para validar este ponto.</div>
+      </section></main><script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}</script></body></html>`);
+    popup.document.close();
+  }
+
+  function printAllQrs() {
+    const qrNodes = Array.from(document.querySelectorAll("[data-qr-card] svg"));
+    if (!rows.length || qrNodes.length < rows.length) return;
+    const escape = (value?: string | null) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[character] ?? character);
+    const labels = rows.map((point, index) => `<section class="label"><div class="brand">Ronda Smart</div><div class="name">${escape(point.nome)}</div><div class="meta">${escape(point.condominio)}</div><div class="meta">${escape(point.localizacao)}</div><div class="qr">${qrNodes[index].outerHTML}</div><div class="code">${escape(point.codigo)}</div></section>`).join("");
+    const popup = window.open("", "_blank", "width=900,height=900");
+    if (!popup) return;
+    popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>QR Codes Ronda Smart</title>
+      <style>@page{size:A4;margin:10mm}*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;color:#0f172a}.sheet{display:grid;grid-template-columns:1fr 1fr;gap:8mm}.label{min-height:132mm;border:1.5px solid #0f172a;border-radius:6px;padding:7mm;text-align:center;break-inside:avoid}.brand{font-size:11px;font-weight:700;color:#2563eb;text-transform:uppercase}.name{font-size:19px;font-weight:800;margin:5px 0}.meta{font-size:11px;color:#475569;margin:3px 0}.qr{display:flex;justify-content:center;margin:5mm 0}.qr svg{width:57mm;height:57mm}.code{font:700 15px monospace;letter-spacing:1px;background:#f1f5f9;padding:7px;border-radius:5px}</style>
+      </head><body><main class="sheet">${labels}</main><script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}</script></body></html>`);
+    popup.document.close();
+  }
   return (
     <AdminLayout title="Pontos de ronda">
-      <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex flex-wrap justify-end gap-2">
+        {rows.length > 0 && <Button variant="outline" onClick={printAllQrs}><Printer size={16} />Imprimir todos</Button>}
         <FormModal title="Novo ponto de ronda" button="Novo Ponto" submitLabel="Salvar ponto" onSubmit={createCheckpoint}>
           <Select name="condominiumId" required>
             <option value="">Selecione o condominio</option>
@@ -858,19 +907,19 @@ export function PontosPage() {
       </div>
       {error && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-600">{error}</p>}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {rows.map((p) => <Card key={p.nome}><CardContent><div className="flex gap-4"><QRPattern code={p.codigo} /><div className="flex-1"><p className="font-black">{p.nome}</p><p className="text-sm text-slate-500">{p.localizacao}</p><div className="mt-3"><StatusBadge status={p.status} /></div><p className="mt-2 text-xs font-semibold text-slate-400">Ultima visita: {p.ultimaVisita}</p><p className="mt-1 text-xs font-black text-blue-600">{p.codigo}</p></div></div><div className="mt-4 flex gap-2"><Button variant="outline" className="flex-1" onClick={() => setSelectedQr(p)}>Ver detalhes</Button><Button className="flex-1" onClick={() => setSelectedQr(p)}><QrCode size={16} />Gerar QR</Button></div></CardContent></Card>)}
+        {rows.map((p) => <Card key={p.nome}><CardContent><div className="flex gap-4"><div data-qr-card><QRPattern code={p.codigo} /></div><div className="flex-1"><p className="font-black">{p.nome}</p><p className="text-sm text-slate-500">{p.localizacao}</p><div className="mt-3"><StatusBadge status={p.status} /></div><p className="mt-2 text-xs font-semibold text-slate-400">Ultima visita: {p.ultimaVisita}</p><p className="mt-1 text-xs font-black text-blue-600">{p.codigo}</p></div></div><div className="mt-4 flex gap-2"><Button variant="outline" className="flex-1" onClick={() => setSelectedQr(p)}>Ver detalhes</Button><Button className="flex-1" onClick={() => setSelectedQr(p)}><QrCode size={16} />Gerar QR</Button></div></CardContent></Card>)}
         {!rows.length && <div className="md:col-span-2 xl:col-span-3"><EmptyState text="Nenhum ponto de ronda cadastrado para esta empresa." /></div>}
       </div>
       {selectedQr && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4">
           <div className="w-full max-w-md rounded-lg bg-white p-6 text-center shadow-soft">
-            <div className="mx-auto flex justify-center"><QRPattern code={selectedQr.codigo} large /></div>
+            <div data-printable-qr className="mx-auto flex justify-center"><QRPattern code={selectedQr.codigo} large /></div>
             <h2 className="mt-5 text-2xl font-black">{selectedQr.nome}</h2>
             <p className="mt-1 text-sm text-slate-500">QR Code exclusivo deste ponto de ronda.</p>
             <div className="mt-4 rounded-lg bg-slate-50 p-3 font-mono text-sm font-black text-blue-600">{selectedQr.codigo}</div>
             <div className="mt-5 grid grid-cols-2 gap-2">
               <Button variant="outline" onClick={() => setSelectedQr(null)}>Fechar</Button>
-              <Button onClick={() => window.print()}>Imprimir QR</Button>
+              <Button onClick={() => printQr(selectedQr)}>Imprimir QR</Button>
             </div>
           </div>
         </div>

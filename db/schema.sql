@@ -102,6 +102,27 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS contracts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'Aguardando assinatura',
+  public_token TEXT UNIQUE NOT NULL,
+  signer_name TEXT,
+  signer_document TEXT,
+  signer_email TEXT,
+  signer_ip TEXT,
+  signer_user_agent TEXT,
+  consent_text TEXT,
+  evidence_hash TEXT,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  signed_at TIMESTAMPTZ,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
 ALTER TABLE condominiums DROP CONSTRAINT IF EXISTS condominiums_name_key;
@@ -127,3 +148,6 @@ CREATE INDEX IF NOT EXISTS idx_checkpoints_condominium ON checkpoints(condominiu
 CREATE INDEX IF NOT EXISTS idx_patrols_status ON patrols(status);
 CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status);
 CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
+CREATE INDEX IF NOT EXISTS idx_contracts_company ON contracts(company_id);
+CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_contracts_public_token ON contracts(public_token);

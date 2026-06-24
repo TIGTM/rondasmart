@@ -11,6 +11,8 @@ Esta base saiu do prototipo e agora possui:
 - Login real com usuarios seedados
 - APIs reais para condominios, vigilantes, pontos, rondas e ocorrencias
 - Estrutura multi-tenant com painel master da plataforma e painel do cliente
+- Contratos com assinatura eletronica e trilha de evidencias
+- Impressao individual ou em lote dos QR Codes
 - Docker Compose com app + banco
 
 ## Credenciais iniciais
@@ -89,6 +91,10 @@ docker compose up -d --build
 ## Observacoes importantes
 
 - O master acessa `/master/clientes` para cadastrar clientes SaaS e usuarios administradores.
+- O master acessa `/master/contratos` para gerar, acompanhar e cancelar contratos.
+- Cada assinatura registra signatario, documento, e-mail, data/hora, IP, navegador, consentimento e hash SHA-256.
+- Configure `PUBLIC_APP_URL` com o dominio HTTPS definitivo para gerar links de assinatura corretos.
+- O texto contratual fornecido e um modelo operacional e deve ser revisado pelo juridico antes do uso comercial.
 - O admin do cliente acessa `/admin/dashboard` e visualiza apenas dados da propria empresa.
 - Fotos ainda sao armazenadas como URL/metadado; o proximo passo e adicionar MinIO/S3.
 - Camera real no celular exige HTTPS em navegadores modernos.
