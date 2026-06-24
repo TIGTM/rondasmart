@@ -96,6 +96,7 @@ docker compose up -d --build
 - Configure `PUBLIC_APP_URL` com o dominio HTTPS definitivo para gerar links de assinatura corretos.
 - O texto contratual fornecido e um modelo operacional e deve ser revisado pelo juridico antes do uso comercial.
 - O admin do cliente acessa `/admin/dashboard` e visualiza apenas dados da propria empresa.
+- O admin do cliente acessa `/admin/contratos` para consultar e imprimir as copias assinadas da propria empresa.
 - Fotos ainda sao armazenadas como URL/metadado; o proximo passo e adicionar MinIO/S3.
 - Camera real no celular exige HTTPS em navegadores modernos.
 - O schema inicial esta em `db/schema.sql`.

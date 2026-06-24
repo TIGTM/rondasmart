@@ -4,6 +4,7 @@ import {
   Camera,
   CheckCircle2,
   Clock,
+  FileSignature,
   MapPin,
   Radio,
   ShieldAlert,
@@ -25,5 +26,6 @@ export const navAdmin = [
   { href: "/admin/pontos", label: "Pontos", icon: MapPin },
   { href: "/admin/rondas", label: "Rondas", icon: Radio },
   { href: "/admin/ocorrencias", label: "Ocorrencias", icon: Camera },
-  { href: "/admin/relatorios", label: "Relatorios", icon: BadgeCheck }
+  { href: "/admin/relatorios", label: "Relatorios", icon: BadgeCheck },
+  { href: "/admin/contratos", label: "Contratos", icon: FileSignature }
 ];

@@ -250,7 +250,7 @@ export function LoginPage() {
   );
 }
 
-function AdminLayout({ title, children }: { title: string; children: React.ReactNode }) {
+export function AdminLayout({ title, children }: { title: string; children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const adminLinks = (

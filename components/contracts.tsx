@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Ban, Check, Copy, ExternalLink, FileSignature, Loader2, Plus, Printer, ShieldCheck, X } from "lucide-react";
-import { MasterLayout } from "@/components/prototype";
+import { AdminLayout, MasterLayout } from "@/components/prototype";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input, Select, Textarea } from "@/components/ui/form";
@@ -20,6 +20,10 @@ type Contract = {
   signerName?: string | null;
   signerEmail?: string | null;
   evidenceHash?: string | null;
+};
+type ClientContract = Omit<Contract, "signingUrl"> & {
+  documentUrl: string;
+  signerDocument?: string | null;
 };
 type PublicContract = {
   title: string;
@@ -159,6 +163,59 @@ export function MasterContractsPage() {
         </div>
       )}
     </MasterLayout>
+  );
+}
+
+export function ClientContractsPage() {
+  const [contracts, setContracts] = useState<ClientContract[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    apiJson<{ contracts: ClientContract[] }>("/api/contracts")
+      .then((data) => setContracts(data.contracts))
+      .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar os contratos."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <AdminLayout title="Contratos">
+      <div className="mb-5">
+        <p className="text-sm font-semibold text-slate-500">Documentos da sua empresa enviados pela Ronda Smart.</p>
+      </div>
+      {error && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-600">{error}</p>}
+      {loading ? <div className="grid min-h-48 place-items-center"><Loader2 className="animate-spin text-blue-600" /></div> : (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {contracts.map((contract) => (
+            <Card key={contract.id}>
+              <CardContent>
+                <div className="flex items-start justify-between gap-3">
+                  <div><p className="text-sm font-bold text-blue-600">{contract.companyName}</p><h2 className="mt-1 text-lg font-black">{contract.title}</h2></div>
+                  <ContractStatus status={contract.status} />
+                </div>
+                <div className="mt-4 grid gap-1 text-sm font-semibold text-slate-500">
+                  <p>Disponibilizado em {new Date(contract.sentAt).toLocaleString("pt-BR")}</p>
+                  {contract.status === "Assinado" && contract.signedAt && <>
+                    <p>Assinado em {new Date(contract.signedAt).toLocaleString("pt-BR")}</p>
+                    <p>Signatario: {contract.signerName}</p>
+                    <p>E-mail: {contract.signerEmail}</p>
+                    <p className="truncate font-mono text-xs">Hash: {contract.evidenceHash}</p>
+                  </>}
+                </div>
+                <div className="mt-5">
+                  {contract.status === "Assinado" ? (
+                    <Link href={contract.documentUrl} target="_blank"><Button><Printer size={16} />Abrir e imprimir copia</Button></Link>
+                  ) : (
+                    <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-700">A copia assinada ficara disponivel aqui depois da assinatura.</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          {!contracts.length && <div className="rounded-lg border border-dashed border-slate-200 p-10 text-center text-sm font-semibold text-slate-400 xl:col-span-2">Nenhum contrato disponibilizado para sua empresa.</div>}
+        </div>
+      )}
+    </AdminLayout>
   );
 }
 
