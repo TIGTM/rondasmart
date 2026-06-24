@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 ALTER TABLE condominiums ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;
+ALTER TABLE condominiums DROP CONSTRAINT IF EXISTS condominiums_name_key;
 
 DO $$
 BEGIN
@@ -121,6 +122,7 @@ ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('SUPER_ADMIN',
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id);
 CREATE INDEX IF NOT EXISTS idx_condominiums_company ON condominiums(company_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_condominiums_company_name ON condominiums(company_id, name);
 CREATE INDEX IF NOT EXISTS idx_checkpoints_condominium ON checkpoints(condominium_id);
 CREATE INDEX IF NOT EXISTS idx_patrols_status ON patrols(status);
 CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status);

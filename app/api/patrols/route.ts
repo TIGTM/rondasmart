@@ -8,13 +8,43 @@ export async function GET() {
   const params = user?.role === "SUPER_ADMIN" ? [] : [user?.companyId];
   const result = await query(
     `SELECT p.*, c.name AS condominium_name, u.name AS guard_name,
-            count(v.id)::int AS completed_checkpoints
+            (SELECT count(*)::int FROM patrol_visits v WHERE v.patrol_id = p.id) AS completed_checkpoints,
+            (SELECT count(*)::int FROM checkpoints cp WHERE cp.condominium_id = p.condominium_id) AS total_checkpoints,
+            (SELECT count(*)::int FROM incidents i WHERE i.patrol_id = p.id) AS incidents_count,
+            COALESCE(
+              (
+                SELECT jsonb_agg(
+                  jsonb_build_object(
+                  'visitedAt', v.visited_at,
+                    'checkpointName', cp.name
+                  )
+                  ORDER BY v.visited_at
+                )
+                FROM patrol_visits v
+                JOIN checkpoints cp ON cp.id = v.checkpoint_id
+                WHERE v.patrol_id = p.id
+              ),
+              '[]'::jsonb
+            ) AS visit_events,
+            COALESCE(
+              (
+                SELECT jsonb_agg(
+                  jsonb_build_object(
+                    'createdAt', i.created_at,
+                    'type', i.type,
+                    'location', i.location
+                  )
+                  ORDER BY i.created_at
+                )
+                FROM incidents i
+                WHERE i.patrol_id = p.id
+              ),
+              '[]'::jsonb
+            ) AS incident_events
      FROM patrols p
      JOIN condominiums c ON c.id = p.condominium_id
      LEFT JOIN users u ON u.id = p.guard_id
-     LEFT JOIN patrol_visits v ON v.patrol_id = p.id
      ${user?.role === "SUPER_ADMIN" ? "" : "WHERE c.company_id = $1"}
-     GROUP BY p.id, c.name, u.name
      ORDER BY p.created_at DESC
      LIMIT 100`,
     params

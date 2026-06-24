@@ -24,6 +24,9 @@ export async function POST(request: Request) {
   if (response) return response;
 
   const body = await request.json();
+  if (String(body.password ?? "").length < 8) {
+    return Response.json({ error: "A senha inicial deve ter pelo menos 8 caracteres." }, { status: 400 });
+  }
   const companyId = user?.role === "SUPER_ADMIN" ? body.companyId : user?.companyId;
   if (!companyId) return Response.json({ error: "Empresa obrigatoria." }, { status: 400 });
 
@@ -43,7 +46,7 @@ export async function POST(request: Request) {
       companyId,
       body.name,
       String(body.email).toLowerCase(),
-      hashPassword(body.password ?? "rondasmart-demo"),
+      hashPassword(body.password),
       body.phone ?? null,
       body.registration ?? null,
       body.shift ?? null,

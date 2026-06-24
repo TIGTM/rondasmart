@@ -38,18 +38,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input, Select, Textarea } from "@/components/ui/form";
 import {
-  atividades,
-  alerts,
-  condominios,
   kpis,
-  mobileChecklist,
   navAdmin,
-  ocorrencias,
-  pontos,
-  rondas,
-  timeline,
-  vigilantes,
-  weekly
 } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +57,21 @@ type MobileCheckpoint = {
 type MobileRondaData = {
   patrol: { id: string; name: string; status: string; condominiumName?: string | null; startedAt?: string | null } | null;
   checkpoints: MobileCheckpoint[];
+};
+type PatrolRow = {
+  id: string;
+  createdAt?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  guardName?: string | null;
+  condominiumName: string;
+  name: string;
+  status: string;
+  completedCheckpoints: number;
+  totalCheckpoints: number;
+  incidentsCount: number;
+  visitEvents?: Array<{ visitedAt: string; checkpointName: string }>;
+  incidentEvents?: Array<{ createdAt: string; type: string; location?: string | null }>;
 };
 
 async function apiJson<T>(url: string, options?: RequestInit) {
@@ -330,17 +335,23 @@ function KpiCard({ item }: { item: (typeof kpis)[number] }) {
   );
 }
 
-function SimpleChart() {
+function SimpleChart({ values }: { values: Array<{ label: string; total: number }> }) {
+  const maximum = Math.max(1, ...values.map((item) => item.total));
   return (
     <div className="flex h-56 items-end gap-3">
-      {weekly.map((value, index) => (
-        <div key={index} className="flex flex-1 flex-col items-center gap-2">
-          <div className="w-full rounded-t-md bg-blue-600" style={{ height: `${value * 8}px` }} />
-          <span className="text-xs font-semibold text-slate-400">{["S", "T", "Q", "Q", "S", "S", "D"][index]}</span>
+      {values.map((item) => (
+        <div key={item.label} className="flex flex-1 flex-col items-center gap-2">
+          <span className="text-xs font-black text-slate-600">{item.total}</span>
+          <div className="min-h-1 w-full rounded-t-md bg-blue-600" style={{ height: `${Math.max(4, (item.total / maximum) * 160)}px` }} />
+          <span className="text-xs font-semibold text-slate-400">{item.label}</span>
         </div>
       ))}
     </div>
   );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return <div className="grid min-h-32 place-items-center rounded-lg border border-dashed border-slate-200 p-6 text-center text-sm font-semibold text-slate-400">{text}</div>;
 }
 
 function MockMap({ dark = false }: { dark?: boolean }) {
@@ -366,8 +377,11 @@ export function AdminDashboard() {
       delayedPatrols: number;
       incidents: number;
       activeGuards: number;
+      checkpoints: number;
     };
+    weekly?: Array<{ label: string; total: number }>;
     activities?: Array<{ title: string; location: string; status: string }>;
+    alerts?: Array<{ title: string; text?: string | null; priority: string; status: string }>;
   } | null>(null);
 
   useEffect(() => {
@@ -390,9 +404,10 @@ export function AdminDashboard() {
     return { ...item, value: String(valueByLabel[item.label] ?? item.value), detail: "Dados do banco" };
   });
 
-  const recentActivities = dashboard?.activities?.length
-    ? dashboard.activities.map((item) => `${item.title} - ${item.location ?? "Sem local"} (${item.status})`)
-    : atividades;
+  const recentActivities = dashboard?.activities ?? [];
+  const activeAlerts = dashboard?.alerts ?? [];
+  const featuredAlert = activeAlerts[0];
+  const weeklyValues = dashboard?.weekly ?? Array.from({ length: 7 }, (_, index) => ({ label: String(index + 1), total: 0 }));
 
   return (
     <AdminLayout title="Dashboard">
@@ -400,18 +415,20 @@ export function AdminDashboard() {
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.3fr_.7fr]">
         <Card>
           <CardHeader><h2 className="font-black">Rondas da semana</h2></CardHeader>
-          <CardContent><SimpleChart /></CardContent>
+          <CardContent><SimpleChart values={weeklyValues} /></CardContent>
         </Card>
-        <Card className="border-red-200 bg-red-50">
+        <Card className={featuredAlert ? "border-red-200 bg-red-50" : ""}>
           <CardContent>
-            <div className="flex items-start gap-3">
-              <div className="rounded-lg bg-red-500 p-3 text-white"><Siren /></div>
-              <div>
-                <p className="text-sm font-black uppercase text-red-600">Alerta em destaque</p>
-                <h2 className="mt-2 text-2xl font-black">Emergencia ativa</h2>
-                <p className="mt-2 text-sm text-red-700">Botao de panico acionado na Garagem G1. Central notificada para atendimento.</p>
+            {featuredAlert ? (
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-red-500 p-3 text-white"><Siren /></div>
+                <div>
+                  <p className="text-sm font-black uppercase text-red-600">Alerta em destaque</p>
+                  <h2 className="mt-2 text-2xl font-black">{featuredAlert.title}</h2>
+                  <p className="mt-2 text-sm text-red-700">{featuredAlert.text || `Status: ${featuredAlert.status}`}</p>
+                </div>
               </div>
-            </div>
+            ) : <EmptyState text="Nenhum alerta aberto para esta empresa." />}
           </CardContent>
         </Card>
       </div>
@@ -419,19 +436,23 @@ export function AdminDashboard() {
         <Card>
           <CardHeader><h2 className="font-black">Status operacional</h2></CardHeader>
           <CardContent className="space-y-4">
-            {alerts.map((alert) => {
-              const Icon = alert.icon;
-              return <div key={alert.title} className="flex gap-3"><Icon className="text-blue-600" size={20} /><div><p className="font-bold">{alert.title}</p><p className="text-sm text-slate-500">{alert.text}</p></div></div>;
-            })}
+            {activeAlerts.length ? activeAlerts.map((alert) => (
+              <div key={`${alert.title}-${alert.status}`} className="flex gap-3">
+                <AlertTriangle className="text-amber-600" size={20} />
+                <div><p className="font-bold">{alert.title}</p><p className="text-sm text-slate-500">{alert.text || `Prioridade ${alert.priority} - ${alert.status}`}</p></div>
+              </div>
+            )) : <EmptyState text="Operacao sem alertas abertos." />}
           </CardContent>
         </Card>
         <Card>
           <CardHeader><h2 className="font-black">Ultimas atividades</h2></CardHeader>
-          <CardContent className="space-y-3">{recentActivities.map((activity) => <p key={activity} className="rounded-lg bg-slate-50 p-3 text-sm font-medium text-slate-600">{activity}</p>)}</CardContent>
+          <CardContent className="space-y-3">
+            {recentActivities.length ? recentActivities.map((activity, index) => <p key={`${activity.title}-${index}`} className="rounded-lg bg-slate-50 p-3 text-sm font-medium text-slate-600">{activity.title} - {activity.location || "Sem local"} ({activity.status})</p>) : <EmptyState text="Nenhuma atividade registrada." />}
+          </CardContent>
         </Card>
         <Card>
-          <CardHeader><h2 className="font-black">Mapa de pontos</h2></CardHeader>
-          <CardContent><MockMap /></CardContent>
+          <CardHeader><h2 className="font-black">Pontos cadastrados</h2></CardHeader>
+          <CardContent><div className="grid min-h-64 place-items-center rounded-lg bg-slate-50 text-center"><div><MapPin className="mx-auto text-blue-600" size={36} /><p className="mt-3 text-4xl font-black">{dashboard?.kpis?.checkpoints ?? 0}</p><p className="mt-1 text-sm font-semibold text-slate-500">pontos de ronda nesta operacao</p></div></div></CardContent>
         </Card>
       </div>
     </AdminLayout>
@@ -558,7 +579,7 @@ export function MasterClientesPage() {
         plan: values.plan,
         adminName: values.adminName,
         adminEmail: values.adminEmail,
-        adminPassword: values.adminPassword || "rondasmart-demo"
+        adminPassword: values.adminPassword
       })
     });
     show({ title: "Cliente cadastrado", text: "Cliente e usuario administrador criados com sucesso." });
@@ -583,7 +604,7 @@ export function MasterClientesPage() {
           <div className="my-2 border-t border-slate-100 pt-3 text-sm font-black text-slate-500">Administrador do cliente</div>
           <Input name="adminName" placeholder="Nome do admin do cliente" required />
           <Input name="adminEmail" placeholder="E-mail de acesso" type="email" required />
-          <Input name="adminPassword" placeholder="Senha inicial" defaultValue="rondasmart-demo" />
+          <Input name="adminPassword" placeholder="Senha inicial (minimo 8 caracteres)" type="password" minLength={8} required />
         </FormModal>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -615,13 +636,16 @@ export function MasterClientesPage() {
 }
 
 export function CondominiosPage() {
-  const [dbCondominios, setDbCondominios] = useState<any[] | null>(null);
+  const [dbCondominios, setDbCondominios] = useState<any[]>([]);
+  const [error, setError] = useState("");
   async function loadCondominios() {
     try {
       const data = await apiJson<{ condominiums: any[] }>("/api/condominiums");
       setDbCondominios(data.condominiums);
-    } catch {
-      setDbCondominios(null);
+      setError("");
+    } catch (err) {
+      setDbCondominios([]);
+      setError(err instanceof Error ? err.message : "Nao foi possivel carregar os condominios.");
     }
   }
   useEffect(() => { void loadCondominios(); }, []);
@@ -642,14 +666,14 @@ export function CondominiosPage() {
     });
     await loadCondominios();
   }
-  const rows = dbCondominios?.map((c) => ({
+  const rows = dbCondominios.map((c) => ({
     nome: c.name,
     cidade: c.city,
     bairro: c.district,
     sindico: c.managerName,
     vigilantes: c.guardsCount,
     status: c.status
-  })) ?? condominios;
+  }));
   return (
     <AdminLayout title="Condominios">
       <div className="mb-4 flex justify-end">
@@ -664,7 +688,8 @@ export function CondominiosPage() {
           <Input name="managerEmail" placeholder="E-mail" type="email" />
         </FormModal>
       </div>
-      <Card><Table headers={["Nome", "Cidade", "Bairro", "Sindico", "Vigilantes", "Status"]} rows={rows.map((c) => [c.nome, c.cidade, c.bairro, c.sindico, c.vigilantes, <StatusBadge key={c.nome} status={c.status} />])} /></Card>
+      {error && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-600">{error}</p>}
+      <Card>{rows.length ? <Table headers={["Nome", "Cidade", "Bairro", "Sindico", "Vigilantes", "Status"]} rows={rows.map((c) => [c.nome, c.cidade, c.bairro, c.sindico, c.vigilantes, <StatusBadge key={c.nome} status={c.status} />])} /> : <CardContent><EmptyState text="Nenhum condominio cadastrado para esta empresa." /></CardContent>}</Card>
     </AdminLayout>
   );
 }
@@ -701,14 +726,17 @@ function Table({ headers, rows }: { headers: string[]; rows: React.ReactNode[][]
 }
 
 export function VigilantesPage() {
-  const [dbVigilantes, setDbVigilantes] = useState<any[] | null>(null);
+  const [dbVigilantes, setDbVigilantes] = useState<any[]>([]);
   const [dbCondominios, setDbCondominios] = useState<any[]>([]);
+  const [error, setError] = useState("");
   async function loadVigilantes() {
     try {
       const data = await apiJson<{ guards: any[] }>("/api/guards");
       setDbVigilantes(data.guards);
-    } catch {
-      setDbVigilantes(null);
+      setError("");
+    } catch (err) {
+      setDbVigilantes([]);
+      setError(err instanceof Error ? err.message : "Nao foi possivel carregar os vigilantes.");
     }
   }
   useEffect(() => {
@@ -726,19 +754,19 @@ export function VigilantesPage() {
         registration: values.registration,
         shift: values.shift,
         condominiumId: values.condominiumId || null,
-        password: values.password || "rondasmart-demo"
+        password: values.password
       })
     });
     await loadVigilantes();
   }
-  const rows = dbVigilantes?.map((v, index) => ({
+  const rows = dbVigilantes.map((v, index) => ({
     id: index + 1,
     nome: v.name,
     telefone: v.phone,
     condominio: v.condominiumName,
     turno: v.shift,
     status: v.status
-  })) ?? vigilantes;
+  }));
   return (
     <AdminLayout title="Vigilantes">
       <div className="mb-4 flex justify-end">
@@ -755,11 +783,13 @@ export function VigilantesPage() {
             <option>07:00 - 19:00</option>
             <option>19:00 - 07:00</option>
           </Select>
-          <Input name="password" placeholder="Senha inicial" defaultValue="rondasmart-demo" />
+          <Input name="password" placeholder="Senha inicial (minimo 8 caracteres)" type="password" minLength={8} required />
         </FormModal>
       </div>
+      {error && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-600">{error}</p>}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {rows.map((v) => <Card key={v.nome}><CardContent><div className="flex items-center gap-4"><div className="grid h-12 w-12 place-items-center rounded-full bg-slate-950 font-black text-white">{v.nome.split(" ").map((p: string) => p[0]).slice(0, 2)}</div><div className="flex-1"><p className="font-black">{v.nome}</p><p className="text-sm text-slate-500">{v.condominio}</p></div><StatusBadge status={v.status} /></div><div className="mt-4 grid gap-2 text-sm text-slate-500"><span className="flex gap-2"><Phone size={16} />{v.telefone}</span><span className="flex gap-2"><Radio size={16} />{v.turno}</span></div></CardContent></Card>)}
+        {!rows.length && <div className="md:col-span-2 xl:col-span-3"><EmptyState text="Nenhum vigilante cadastrado para esta empresa." /></div>}
       </div>
     </AdminLayout>
   );
@@ -776,14 +806,17 @@ function QRPattern({ code = "RS-001", large = false }: { code?: string; large?: 
 
 export function PontosPage() {
   const [selectedQr, setSelectedQr] = useState<any | null>(null);
-  const [dbPontos, setDbPontos] = useState<any[] | null>(null);
+  const [dbPontos, setDbPontos] = useState<any[]>([]);
   const [dbCondominios, setDbCondominios] = useState<any[]>([]);
+  const [error, setError] = useState("");
   async function loadPontos() {
     try {
       const data = await apiJson<{ checkpoints: any[] }>("/api/checkpoints");
       setDbPontos(data.checkpoints);
-    } catch {
-      setDbPontos(null);
+      setError("");
+    } catch (err) {
+      setDbPontos([]);
+      setError(err instanceof Error ? err.message : "Nao foi possivel carregar os pontos.");
     }
   }
   useEffect(() => {
@@ -803,13 +836,13 @@ export function PontosPage() {
     });
     await loadPontos();
   }
-  const rows = dbPontos?.map((p) => ({
+  const rows = dbPontos.map((p) => ({
     nome: p.name,
     localizacao: p.location,
     status: p.status,
     ultimaVisita: p.lastVisitAt ? new Date(p.lastVisitAt).toLocaleString("pt-BR") : "Sem visita",
     codigo: p.qrToken
-  })) ?? pontos;
+  }));
   return (
     <AdminLayout title="Pontos de ronda">
       <div className="mb-4 flex justify-end">
@@ -823,15 +856,17 @@ export function PontosPage() {
           <Input name="qrToken" placeholder="Codigo QR opcional, ex: RS-011" />
         </FormModal>
       </div>
+      {error && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-600">{error}</p>}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {rows.map((p) => <Card key={p.nome}><CardContent><div className="flex gap-4"><QRPattern code={p.codigo} /><div className="flex-1"><p className="font-black">{p.nome}</p><p className="text-sm text-slate-500">{p.localizacao}</p><div className="mt-3"><StatusBadge status={p.status} /></div><p className="mt-2 text-xs font-semibold text-slate-400">Ultima visita: {p.ultimaVisita}</p><p className="mt-1 text-xs font-black text-blue-600">{p.codigo}</p></div></div><div className="mt-4 flex gap-2"><Button variant="outline" className="flex-1" onClick={() => setSelectedQr(p)}>Ver detalhes</Button><Button className="flex-1" onClick={() => setSelectedQr(p)}><QrCode size={16} />Gerar QR</Button></div></CardContent></Card>)}
+        {!rows.length && <div className="md:col-span-2 xl:col-span-3"><EmptyState text="Nenhum ponto de ronda cadastrado para esta empresa." /></div>}
       </div>
       {selectedQr && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4">
           <div className="w-full max-w-md rounded-lg bg-white p-6 text-center shadow-soft">
             <div className="mx-auto flex justify-center"><QRPattern code={selectedQr.codigo} large /></div>
             <h2 className="mt-5 text-2xl font-black">{selectedQr.nome}</h2>
-            <p className="mt-1 text-sm text-slate-500">QR Code demonstrativo gerado para o ponto de ronda.</p>
+            <p className="mt-1 text-sm text-slate-500">QR Code exclusivo deste ponto de ronda.</p>
             <div className="mt-4 rounded-lg bg-slate-50 p-3 font-mono text-sm font-black text-blue-600">{selectedQr.codigo}</div>
             <div className="mt-5 grid grid-cols-2 gap-2">
               <Button variant="outline" onClick={() => setSelectedQr(null)}>Fechar</Button>
@@ -845,35 +880,92 @@ export function PontosPage() {
 }
 
 export function RondasPage() {
-  const [dbRondas, setDbRondas] = useState<any[] | null>(null);
+  const [dbRondas, setDbRondas] = useState<PatrolRow[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [filters, setFilters] = useState({ condominium: "", guard: "", status: "", date: "" });
+  const [error, setError] = useState("");
   useEffect(() => {
-    fetch("/api/patrols").then((r) => (r.ok ? r.json() : null)).then((d) => setDbRondas(d?.patrols ?? null)).catch(() => setDbRondas(null));
+    apiJson<{ patrols: PatrolRow[] }>("/api/patrols")
+      .then((data) => {
+        setDbRondas(data.patrols);
+        setSelectedId(data.patrols[0]?.id ?? "");
+      })
+      .catch((err) => {
+        setDbRondas([]);
+        setError(err instanceof Error ? err.message : "Nao foi possivel carregar as rondas.");
+      });
   }, []);
-  const rows = dbRondas?.map((r) => ({
-    data: r.createdAt ? new Date(r.createdAt).toLocaleDateString("pt-BR") : "-",
-    vigilante: r.guardName ?? "-",
-    condominio: r.condominiumName,
-    ronda: r.name,
-    inicio: r.startedAt ? new Date(r.startedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "-",
-    fim: r.finishedAt ? new Date(r.finishedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "-",
-    pontos: String(r.completedCheckpoints ?? 0),
-    ocorrencias: 0,
-    status: r.status
-  })) ?? rondas.slice(0, 12);
+  const filtered = dbRondas.filter((patrol) =>
+    (!filters.condominium || patrol.condominiumName === filters.condominium) &&
+    (!filters.guard || patrol.guardName === filters.guard) &&
+    (!filters.status || patrol.status === filters.status) &&
+    (!filters.date || patrol.createdAt?.slice(0, 10) === filters.date)
+  );
+  const selected = filtered.find((patrol) => patrol.id === selectedId) ?? filtered[0] ?? null;
+  const timelineItems = selected ? buildPatrolTimeline(selected) : [];
+  const duration = selected ? formatDuration(selected.startedAt, selected.finishedAt) : "-";
+  const condominiums = Array.from(new Set(dbRondas.map((item) => item.condominiumName))).sort();
+  const guards = Array.from(new Set(dbRondas.map((item) => item.guardName).filter(Boolean) as string[])).sort();
+  const statuses = Array.from(new Set(dbRondas.map((item) => item.status))).sort();
   return (
     <AdminLayout title="Monitoramento de rondas">
-      <Filters labels={["Condominio", "Vigilante", "Status", "Data"]} />
+      <Card><CardContent className="grid gap-3 md:grid-cols-4">
+        <Select value={filters.condominium} onChange={(event) => setFilters({ ...filters, condominium: event.target.value })}><option value="">Todos os condominios</option>{condominiums.map((value) => <option key={value}>{value}</option>)}</Select>
+        <Select value={filters.guard} onChange={(event) => setFilters({ ...filters, guard: event.target.value })}><option value="">Todos os vigilantes</option>{guards.map((value) => <option key={value}>{value}</option>)}</Select>
+        <Select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">Todos os status</option>{statuses.map((value) => <option key={value}>{value}</option>)}</Select>
+        <Input type="date" value={filters.date} onChange={(event) => setFilters({ ...filters, date: event.target.value })} />
+      </CardContent></Card>
+      {error && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-600">{error}</p>}
       <div className="mt-5 grid gap-5 xl:grid-cols-[.8fr_1.2fr]">
-        <Card><CardHeader><h2 className="font-black">Timeline da ronda</h2></CardHeader><CardContent><Timeline items={timeline} /></CardContent></Card>
-        <Card><CardHeader><h2 className="font-black">Tempo real</h2></CardHeader><CardContent><MockMap /><div className="mt-4 grid gap-3 md:grid-cols-4"><MiniStat label="Vigilante" value="Joao" /><MiniStat label="Tempo" value="52 min" /><MiniStat label="Visitados" value="7" /><MiniStat label="Pendentes" value="3" /></div></CardContent></Card>
+        <Card><CardHeader><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-black">Timeline da ronda</h2><Select className="max-w-xs" value={selected?.id ?? ""} onChange={(event) => setSelectedId(event.target.value)}><option value="">Selecione uma ronda</option>{filtered.map((patrol) => <option key={patrol.id} value={patrol.id}>{patrol.name} - {patrol.condominiumName}</option>)}</Select></div></CardHeader><CardContent>{timelineItems.length ? <Timeline items={timelineItems} /> : <EmptyState text="Nenhuma ronda selecionada ou registrada." />}</CardContent></Card>
+        <Card><CardHeader><h2 className="font-black">Resumo da ronda</h2></CardHeader><CardContent>{selected ? <><div className="rounded-lg bg-slate-50 p-5"><p className="text-sm font-semibold text-slate-500">{selected.condominiumName}</p><p className="mt-1 text-2xl font-black">{selected.name}</p><div className="mt-3"><StatusBadge status={selected.status} /></div></div><div className="mt-4 grid gap-3 md:grid-cols-4"><MiniStat label="Vigilante" value={selected.guardName ?? "-"} /><MiniStat label="Duracao" value={duration} /><MiniStat label="Visitados" value={String(selected.completedCheckpoints)} /><MiniStat label="Pendentes" value={String(Math.max(0, selected.totalCheckpoints - selected.completedCheckpoints))} /></div></> : <EmptyState text="Os dados da ronda aparecerao aqui quando a operacao for iniciada." />}</CardContent></Card>
       </div>
-      <Card className="mt-5"><Table headers={["Data", "Vigilante", "Condominio", "Ronda", "Inicio", "Fim", "Pontos", "Ocorrencias", "Status"]} rows={rows.map((r) => [r.data, r.vigilante, r.condominio, r.ronda, r.inicio, r.fim, r.pontos, r.ocorrencias, <StatusBadge key={r.ronda} status={r.status} />])} /></Card>
+      <Card className="mt-5">{filtered.length ? <Table headers={["Data", "Vigilante", "Condominio", "Ronda", "Inicio", "Fim", "Pontos", "Ocorrencias", "Status"]} rows={filtered.map((r) => patrolCells(r))} /> : <CardContent><EmptyState text="Nenhuma ronda encontrada para os filtros selecionados." /></CardContent>}</Card>
     </AdminLayout>
   );
 }
 
+function formatDateTime(value?: string | null, mode: "date" | "time" = "time") {
+  if (!value) return "-";
+  return new Date(value).toLocaleString("pt-BR", mode === "date" ? { dateStyle: "short" } : { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatDuration(startedAt?: string | null, finishedAt?: string | null) {
+  if (!startedAt) return "-";
+  const end = finishedAt ? new Date(finishedAt).getTime() : Date.now();
+  const minutes = Math.max(0, Math.round((end - new Date(startedAt).getTime()) / 60000));
+  return `${minutes} min`;
+}
+
+function patrolCells(patrol: PatrolRow): React.ReactNode[] {
+  return [
+    formatDateTime(patrol.createdAt, "date"),
+    patrol.guardName ?? "-",
+    patrol.condominiumName,
+    patrol.name,
+    formatDateTime(patrol.startedAt),
+    formatDateTime(patrol.finishedAt),
+    `${patrol.completedCheckpoints}/${patrol.totalCheckpoints}`,
+    patrol.incidentsCount,
+    <StatusBadge key={patrol.id} status={patrol.status} />
+  ];
+}
+
+function buildPatrolTimeline(patrol: PatrolRow) {
+  const events: Array<{ date: Date; text: string }> = [];
+  if (patrol.startedAt) events.push({ date: new Date(patrol.startedAt), text: `${formatDateTime(patrol.startedAt)} - Ronda iniciada` });
+  for (const visit of patrol.visitEvents ?? []) {
+    events.push({ date: new Date(visit.visitedAt), text: `${formatDateTime(visit.visitedAt)} - ${visit.checkpointName} validado` });
+  }
+  for (const incident of patrol.incidentEvents ?? []) {
+    events.push({ date: new Date(incident.createdAt), text: `${formatDateTime(incident.createdAt)} - ${incident.type}${incident.location ? ` em ${incident.location}` : ""}` });
+  }
+  if (patrol.finishedAt) events.push({ date: new Date(patrol.finishedAt), text: `${formatDateTime(patrol.finishedAt)} - Ronda finalizada` });
+  return events.sort((a, b) => a.date.getTime() - b.date.getTime()).map((event) => event.text);
+}
+
 function Timeline({ items }: { items: string[] }) {
-  return <div className="space-y-4">{items.map((item, index) => <div key={item} className="flex gap-3"><div className="mt-1 h-4 w-4 rounded-full bg-blue-600 ring-4 ring-blue-100" /><p className="text-sm font-semibold text-slate-600">{item}</p></div>)}</div>;
+  return <div className="space-y-4">{items.map((item) => <div key={item} className="flex gap-3"><div className="mt-1 h-4 w-4 rounded-full bg-blue-600 ring-4 ring-blue-100" /><p className="text-sm font-semibold text-slate-600">{item}</p></div>)}</div>;
 }
 
 function MiniStat({ label, value }: { label: string; value: string }) {
@@ -885,11 +977,15 @@ function Filters({ labels }: { labels: string[] }) {
 }
 
 export function OcorrenciasPage() {
-  const [dbOcorrencias, setDbOcorrencias] = useState<any[] | null>(null);
+  const [dbOcorrencias, setDbOcorrencias] = useState<any[]>([]);
+  const [error, setError] = useState("");
   useEffect(() => {
-    fetch("/api/incidents").then((r) => (r.ok ? r.json() : null)).then((d) => setDbOcorrencias(d?.incidents ?? null)).catch(() => setDbOcorrencias(null));
+    apiJson<{ incidents: any[] }>("/api/incidents").then((data) => setDbOcorrencias(data.incidents)).catch((err) => {
+      setDbOcorrencias([]);
+      setError(err instanceof Error ? err.message : "Nao foi possivel carregar as ocorrencias.");
+    });
   }, []);
-  const rows = dbOcorrencias?.map((o) => ({
+  const rows = dbOcorrencias.map((o) => ({
     id: o.id,
     tipo: o.type,
     local: o.location,
@@ -897,12 +993,14 @@ export function OcorrenciasPage() {
     data: o.createdAt ? new Date(o.createdAt).toLocaleString("pt-BR") : "-",
     responsavel: o.guardName ?? "-",
     status: o.status
-  })) ?? ocorrencias;
+  }));
   return (
     <AdminLayout title="Ocorrencias">
       <Filters labels={["Condominio", "Tipo", "Status", "Data"]} />
+      {error && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-600">{error}</p>}
       <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {rows.map((o) => <Card key={o.id} className={o.tipo.includes("Emergencia") ? "border-red-200" : ""}><div className="h-36 rounded-t-lg bg-[linear-gradient(135deg,#e2e8f0,#f8fafc)]"><div className="flex h-full items-center justify-center text-slate-400"><Camera size={34} /></div></div><CardContent><div className="flex items-start justify-between gap-2"><h3 className="font-black">{o.tipo}</h3><StatusBadge status={o.status} /></div><p className="mt-2 text-sm text-slate-500">{o.descricao}</p><div className="mt-4 space-y-1 text-sm font-medium text-slate-600"><p>{o.local}</p><p>{o.data}</p><p>{o.responsavel}</p></div></CardContent></Card>)}
+        {!rows.length && <div className="md:col-span-2 xl:col-span-3"><EmptyState text="Nenhuma ocorrencia registrada para esta empresa." /></div>}
       </div>
     </AdminLayout>
   );
@@ -910,17 +1008,70 @@ export function OcorrenciasPage() {
 
 export function RelatoriosPage() {
   const { toast, show } = useToast();
+  const [patrols, setPatrols] = useState<PatrolRow[]>([]);
+  const [openIncidents, setOpenIncidents] = useState(0);
+  const [filters, setFilters] = useState({ condominium: "", guard: "", start: "", end: "", status: "" });
+  const [error, setError] = useState("");
+  useEffect(() => {
+    Promise.all([
+      apiJson<{ patrols: PatrolRow[] }>("/api/patrols"),
+      apiJson<{ incidents: Array<{ status: string }> }>("/api/incidents")
+    ]).then(([patrolData, incidentData]) => {
+      setPatrols(patrolData.patrols);
+      setOpenIncidents(incidentData.incidents.filter((incident) => incident.status !== "Resolvida").length);
+    }).catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar o relatorio."));
+  }, []);
+  const filtered = patrols.filter((patrol) => {
+    const date = patrol.createdAt?.slice(0, 10) ?? "";
+    return (!filters.condominium || patrol.condominiumName === filters.condominium) &&
+      (!filters.guard || patrol.guardName === filters.guard) &&
+      (!filters.status || patrol.status === filters.status) &&
+      (!filters.start || date >= filters.start) &&
+      (!filters.end || date <= filters.end);
+  });
+  const completedWithDuration = filtered.filter((patrol) => patrol.startedAt && patrol.finishedAt);
+  const averageMinutes = completedWithDuration.length
+    ? Math.round(completedWithDuration.reduce((sum, patrol) => sum + (new Date(patrol.finishedAt!).getTime() - new Date(patrol.startedAt!).getTime()) / 60000, 0) / completedWithDuration.length)
+    : 0;
+  const verifiedPoints = filtered.reduce((sum, patrol) => sum + patrol.completedCheckpoints, 0);
+  const condominiums = Array.from(new Set(patrols.map((item) => item.condominiumName))).sort();
+  const guards = Array.from(new Set(patrols.map((item) => item.guardName).filter(Boolean) as string[])).sort();
+  const statuses = Array.from(new Set(patrols.map((item) => item.status))).sort();
+
+  function exportCsv() {
+    const header = ["Data", "Vigilante", "Condominio", "Ronda", "Inicio", "Fim", "Pontos", "Ocorrencias", "Status"];
+    const lines = filtered.map((patrol) => [
+      formatDateTime(patrol.createdAt, "date"), patrol.guardName ?? "", patrol.condominiumName, patrol.name,
+      formatDateTime(patrol.startedAt), formatDateTime(patrol.finishedAt),
+      `${patrol.completedCheckpoints}/${patrol.totalCheckpoints}`, String(patrol.incidentsCount), patrol.status
+    ]);
+    const csv = [header, ...lines].map((line) => line.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(";")).join("\n");
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `rondas-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    show({ title: "Planilha exportada", text: `${filtered.length} rondas incluidas no arquivo.` });
+  }
+
+  function sendEmail() {
+    const subject = encodeURIComponent("Relatorio Ronda Smart");
+    const body = encodeURIComponent(`Total de rondas: ${filtered.length}\nMedia de duracao: ${averageMinutes} min\nPontos verificados: ${verifiedPoints}\nOcorrencias abertas: ${openIncidents}`);
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  }
   return (
     <AdminLayout title="Relatorios">
       <ToastView toast={toast} />
-      <Card><CardContent className="grid gap-3 md:grid-cols-5"><Select><option>Condominio</option></Select><Select><option>Vigilante</option></Select><Input type="date" /><Input type="date" /><Select><option>Status da ronda</option></Select></CardContent></Card>
-      <div className="mt-5 grid gap-4 md:grid-cols-4"><MiniStat label="Total de rondas" value="50" /><MiniStat label="Media de duracao" value="58 min" /><MiniStat label="Pontos verificados" value="438" /><MiniStat label="Ocorrencias abertas" value="7" /></div>
+      <Card><CardContent className="grid gap-3 md:grid-cols-5"><Select value={filters.condominium} onChange={(event) => setFilters({ ...filters, condominium: event.target.value })}><option value="">Todos os condominios</option>{condominiums.map((value) => <option key={value}>{value}</option>)}</Select><Select value={filters.guard} onChange={(event) => setFilters({ ...filters, guard: event.target.value })}><option value="">Todos os vigilantes</option>{guards.map((value) => <option key={value}>{value}</option>)}</Select><Input type="date" value={filters.start} onChange={(event) => setFilters({ ...filters, start: event.target.value })} /><Input type="date" value={filters.end} onChange={(event) => setFilters({ ...filters, end: event.target.value })} /><Select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">Todos os status</option>{statuses.map((value) => <option key={value}>{value}</option>)}</Select></CardContent></Card>
+      {error && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-600">{error}</p>}
+      <div className="mt-5 grid gap-4 md:grid-cols-4"><MiniStat label="Total de rondas" value={String(filtered.length)} /><MiniStat label="Media de duracao" value={`${averageMinutes} min`} /><MiniStat label="Pontos verificados" value={String(verifiedPoints)} /><MiniStat label="Ocorrencias abertas" value={String(openIncidents)} /></div>
       <div className="mt-5 flex flex-wrap gap-2">
-        <Button onClick={() => show({ title: "Relatorio gerado", text: "Relatorio gerado com sucesso para demonstracao." })}><Download size={16} />Exportar PDF</Button>
-        <Button variant="outline" onClick={() => show({ title: "Relatorio gerado", text: "Relatorio gerado com sucesso para demonstracao." })}><FileSpreadsheet size={16} />Exportar Excel</Button>
-        <Button variant="outline" onClick={() => show({ title: "Relatorio enviado", text: "Relatorio gerado com sucesso para demonstracao." })}><Mail size={16} />Enviar por e-mail</Button>
+        <Button onClick={() => window.print()}><Download size={16} />Exportar PDF</Button>
+        <Button variant="outline" onClick={exportCsv}><FileSpreadsheet size={16} />Exportar Excel</Button>
+        <Button variant="outline" onClick={sendEmail}><Mail size={16} />Enviar por e-mail</Button>
       </div>
-      <Card className="mt-5"><Table headers={["Data", "Vigilante", "Condominio", "Ronda", "Inicio", "Fim", "Pontos concluidos", "Ocorrencias", "Status"]} rows={rondas.slice(0, 14).map((r) => [r.data, r.vigilante, r.condominio, r.ronda, r.inicio, r.fim, r.pontos, r.ocorrencias, <StatusBadge key={r.ronda} status={r.status} />])} /></Card>
+      <Card className="mt-5">{filtered.length ? <Table headers={["Data", "Vigilante", "Condominio", "Ronda", "Inicio", "Fim", "Pontos concluidos", "Ocorrencias", "Status"]} rows={filtered.map((patrol) => patrolCells(patrol))} /> : <CardContent><EmptyState text="Nenhuma ronda encontrada no periodo selecionado." /></CardContent>}</Card>
     </AdminLayout>
   );
 }
@@ -960,12 +1111,14 @@ export function MobileHome() {
   const router = useRouter();
   const { toast, show } = useToast();
   const [userName, setUserName] = useState("Usuario");
+  const [operation, setOperation] = useState<MobileRondaData | null>(null);
   const [starting, setStarting] = useState(false);
 
   useEffect(() => {
     apiJson<{ user: { name: string } | null }>("/api/auth/me")
       .then((data) => setUserName(data.user?.name ?? "Usuario"))
       .catch(() => setUserName("Usuario"));
+    apiJson<MobileRondaData>("/api/mobile/ronda").then(setOperation).catch(() => setOperation(null));
   }, []);
 
   async function startPatrol() {
@@ -990,13 +1143,12 @@ export function MobileHome() {
       <ToastView toast={toast} />
       <div className="space-y-4">
         <div><p className="text-sm font-bold text-blue-600">Ola, {userName}</p><h1 className="text-2xl font-black">Status: Em Servico</h1></div>
-        <Card><CardContent><p className="text-sm text-slate-500">Operacao atual</p><p className="text-xl font-black">Ronda vinculada ao seu cadastro</p><p className="mt-3 text-sm font-semibold text-slate-500">Turno conforme escala cadastrada</p><p className="text-sm font-semibold text-blue-600">Inicie uma ronda para carregar os pontos</p></CardContent></Card>
+        <Card><CardContent><p className="text-sm text-slate-500">Operacao atual</p><p className="text-xl font-black">{operation?.patrol?.name ?? "Nenhuma ronda em andamento"}</p><p className="mt-3 text-sm font-semibold text-slate-500">{operation?.patrol?.condominiumName ?? "Condominio conforme seu cadastro"}</p><p className="text-sm font-semibold text-blue-600">{operation?.patrol ? `${operation.checkpoints.filter((item) => item.visitedAt).length} de ${operation.checkpoints.length} pontos validados` : "Inicie uma ronda para carregar os pontos"}</p></CardContent></Card>
         <Button size="lg" className="w-full py-6 text-lg" onClick={startPatrol} disabled={starting}>
           {starting ? <Loader2 className="animate-spin" /> : <Radio />}
           Iniciar Ronda
         </Button>
-        <Card><CardContent><p className="font-black">Escala do dia</p><p className="mt-2 text-sm text-slate-500">Portaria, blocos, garagem e areas comuns a cada 60 minutos.</p></CardContent></Card>
-        <Card><CardContent><p className="font-black">Avisos</p><p className="mt-2 text-sm text-slate-500">Teste mensal do botao de panico liberado para demonstracao.</p></CardContent></Card>
+        <Card><CardContent><p className="font-black">Pontos da operacao</p><p className="mt-2 text-sm text-slate-500">{operation?.checkpoints.length ? `${operation.checkpoints.length} pontos cadastrados para sua ronda.` : "Nenhum ponto cadastrado para este vigilante."}</p></CardContent></Card>
       </div>
     </MobileShell>
   );
@@ -1043,14 +1195,12 @@ export function MobileRonda() {
     }
   }
 
-  const checklist = rondaData?.checkpoints.length
-    ? rondaData.checkpoints.map((item) => ({
+  const checklist = rondaData?.checkpoints.map((item) => ({
         label: item.name,
         location: item.location,
         qrToken: item.qrToken,
         done: Boolean(item.visitedAt) || scanned.includes(item.name)
-      }))
-    : mobileChecklist.map((item) => ({ ...item, location: null, qrToken: "", done: item.done || scanned.includes(item.label) }));
+      })) ?? [];
   const doneCount = checklist.filter((item) => item.done).length;
   const progress = checklist.length ? Math.round((doneCount / checklist.length) * 100) : 0;
   const currentPatrol = rondaData?.patrol;
@@ -1058,8 +1208,8 @@ export function MobileRonda() {
     <MobileShell title="Ronda em execucao">
       <ToastView toast={toast} />
       <div className="space-y-4">
-        <Card><CardContent><div className="flex justify-between gap-3"><div><p className="text-sm text-slate-500">{currentPatrol?.condominiumName ?? "Condominio Jardim America"}</p><h1 className="text-2xl font-black">{currentPatrol?.name ?? "Ronda em andamento"}</h1></div><StatusBadge status={currentPatrol?.status ?? "Em andamento"} /></div><div className="mt-4 h-3 rounded-full bg-slate-100"><div className="h-3 rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} /></div><p className="mt-2 text-sm font-semibold text-slate-500">{loading ? "Carregando pontos..." : `${doneCount} concluidos, ${checklist.length - doneCount} pendentes`}</p></CardContent></Card>
-        <Card><CardContent className="space-y-3">{checklist.map((item) => <div key={item.label} className="flex items-center gap-3 rounded-lg bg-slate-50 p-3 font-semibold"><span className={cn("grid h-6 w-6 place-items-center rounded-full", item.done ? "bg-green-500 text-white" : "bg-white text-slate-400 ring-1 ring-slate-200")}>{item.done ? <Check size={14} /> : "o"}</span><span className="flex-1"><span className="block">{item.label}</span>{item.qrToken && <span className="block text-xs font-bold text-blue-600">{item.qrToken}</span>}</span></div>)}</CardContent></Card>
+        <Card><CardContent><div className="flex justify-between gap-3"><div><p className="text-sm text-slate-500">{currentPatrol?.condominiumName ?? "Sem condominio vinculado"}</p><h1 className="text-2xl font-black">{currentPatrol?.name ?? "Nenhuma ronda em andamento"}</h1></div>{currentPatrol && <StatusBadge status={currentPatrol.status} />}</div><div className="mt-4 h-3 rounded-full bg-slate-100"><div className="h-3 rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} /></div><p className="mt-2 text-sm font-semibold text-slate-500">{loading ? "Carregando pontos..." : `${doneCount} concluidos, ${checklist.length - doneCount} pendentes`}</p></CardContent></Card>
+        {checklist.length ? <Card><CardContent className="space-y-3">{checklist.map((item) => <div key={item.label} className="flex items-center gap-3 rounded-lg bg-slate-50 p-3 font-semibold"><span className={cn("grid h-6 w-6 place-items-center rounded-full", item.done ? "bg-green-500 text-white" : "bg-white text-slate-400 ring-1 ring-slate-200")}>{item.done ? <Check size={14} /> : "o"}</span><span className="flex-1"><span className="block">{item.label}</span>{item.qrToken && <span className="block text-xs font-bold text-blue-600">{item.qrToken}</span>}</span></div>)}</CardContent></Card> : !loading && <EmptyState text="Nenhum ponto cadastrado para esta operacao." />}
         <div className="grid grid-cols-2 gap-3"><Link href="/mobile/scanner"><Button className="w-full"><ScanLine size={16} />Escanear QR</Button></Link><Link href="/mobile/foto"><Button variant="outline" className="w-full"><Camera size={16} />Foto</Button></Link><Link href="/mobile/ocorrencia"><Button variant="outline" className="w-full"><ShieldAlert size={16} />Ocorrencia</Button></Link><Button variant="secondary" onClick={finishPatrol} disabled={finishing || !currentPatrol}>{finishing ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}Finalizar</Button></div>
         {!currentPatrol && !loading && <Button className="w-full" onClick={() => router.push("/mobile/home")}><Radio size={16} />Iniciar nova ronda</Button>}
         <Link href="/mobile/panico"><Button variant="danger" className="w-full"><Siren size={18} />Botao de panico</Button></Link>

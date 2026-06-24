@@ -44,7 +44,7 @@ async function upsertCondominium(client, data) {
   const result = await client.query(
     `INSERT INTO condominiums (company_id, name, document, address, city, district, manager_name, manager_phone, manager_email, status)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-     ON CONFLICT (name) DO UPDATE SET
+     ON CONFLICT (company_id, name) DO UPDATE SET
        company_id = EXCLUDED.company_id,
        city = EXCLUDED.city,
        district = EXCLUDED.district,
@@ -96,34 +96,6 @@ async function upsertUser(client, data) {
   );
 }
 
-async function cleanupDemoData(client) {
-  await client.query(
-    `DELETE FROM companies
-     WHERE name IN ('GTM Alimentos')
-        OR contact_email IN ('cliente@rondasmart.com.br')`
-  );
-
-  await client.query(
-    `DELETE FROM users
-     WHERE email IN (
-       'cliente@rondasmart.com.br',
-       'vigilante@rondasmart.com.br',
-       'marcos@rondasmart.com.br',
-       'carlos@rondasmart.com.br',
-       'fernanda@rondasmart.com.br'
-     )`
-  );
-
-  await client.query(
-    `DELETE FROM condominiums
-     WHERE name IN (
-       'Condominio Jardim America',
-       'Residencial Monte Verde',
-       'Edificio Solar das Palmeiras'
-     )`
-  );
-}
-
 async function main() {
   const schema = await readFile(new URL("../db/schema.sql", import.meta.url), "utf8");
   const client = await pool.connect();
@@ -131,7 +103,6 @@ async function main() {
   try {
     await client.query("BEGIN");
     await client.query(schema);
-    await cleanupDemoData(client);
 
     const platformCompany = await upsertCompany(client, {
       name: "Ronda Smart Plataforma",

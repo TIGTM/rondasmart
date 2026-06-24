@@ -14,11 +14,13 @@ export async function POST(request: Request) {
   }
 
   const checkpoint = await query(
-    `SELECT cp.*
+    `SELECT cp.*, c.company_id
      FROM checkpoints cp
+     JOIN condominiums c ON c.id = cp.condominium_id
      WHERE cp.qr_token = $1
+       AND ($2::text = 'SUPER_ADMIN' OR c.company_id = $3)
      LIMIT 1`,
-    [qrToken]
+    [qrToken, user?.role, user?.companyId]
   );
 
   if (!checkpoint.rowCount) {
@@ -28,6 +30,22 @@ export async function POST(request: Request) {
   const checkpointRow = checkpoint.rows[0];
   if (user?.role === "GUARD" && user.condominiumId && user.condominiumId !== checkpointRow.condominium_id) {
     return Response.json({ error: "Este QR Code pertence a outro condominio." }, { status: 403 });
+  }
+
+  if (patrolId) {
+    const allowedPatrol = await query(
+      `SELECT p.id
+       FROM patrols p
+       JOIN condominiums c ON c.id = p.condominium_id
+       WHERE p.id = $1
+         AND p.condominium_id = $2
+         AND ($3::text = 'SUPER_ADMIN' OR c.company_id = $4)
+         AND ($3::text <> 'GUARD' OR p.guard_id = $5)`,
+      [patrolId, checkpointRow.condominium_id, user?.role, user?.companyId, user?.id]
+    );
+    if (!allowedPatrol.rowCount) {
+      return Response.json({ error: "Ronda invalida para este ponto." }, { status: 403 });
+    }
   }
 
   let activePatrolId = patrolId;
