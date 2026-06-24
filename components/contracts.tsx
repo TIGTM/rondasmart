@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Ban, Check, Copy, ExternalLink, FileSignature, Loader2, Plus, Printer, ShieldCheck, X } from "lucide-react";
+import { Ban, Check, Copy, ExternalLink, FileSignature, Loader2, Plus, Printer, ShieldCheck, Trash2, X } from "lucide-react";
 import { AdminLayout, MasterLayout } from "@/components/prototype";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -114,6 +114,18 @@ export function MasterContractsPage() {
     }
   }
 
+  async function deleteContract(contract: Contract) {
+    const confirmation = window.prompt(`Exclusao permanente: digite EXCLUIR para apagar "${contract.title}".`);
+    if (confirmation !== "EXCLUIR") return;
+    try {
+      await apiJson(`/api/platform/contracts/${contract.id}`, { method: "DELETE" });
+      if (lastLink === contract.signingUrl) setLastLink("");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel excluir o contrato.");
+    }
+  }
+
   return (
     <MasterLayout title="Contratos">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -139,6 +151,7 @@ export function MasterContractsPage() {
                 <Button variant="outline" onClick={() => copyLink(contract.signingUrl)}><Copy size={16} />Copiar link</Button>
                 <Link href={contract.signingUrl} target="_blank"><Button variant="outline"><ExternalLink size={16} />Abrir</Button></Link>
                 {contract.status === "Aguardando assinatura" && <Button variant="outline" onClick={() => cancelContract(contract.id)}><Ban size={16} />Cancelar</Button>}
+                <Button variant="outline" className="text-red-600" onClick={() => deleteContract(contract)}><Trash2 size={16} />Excluir</Button>
               </div>
             </CardContent>
           </Card>

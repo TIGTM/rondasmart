@@ -21,3 +21,18 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (!result.rowCount) return Response.json({ error: "Contrato nao encontrado ou ja assinado." }, { status: 409 });
   return Response.json({ contract: rowToCamel(result.rows[0]) });
 }
+
+export async function DELETE(_request: Request, context: RouteContext) {
+  const { response } = await requireSession(["SUPER_ADMIN"]);
+  if (response) return response;
+
+  const { id } = await context.params;
+  const result = await query(
+    `DELETE FROM contracts
+     WHERE id = $1
+     RETURNING id, title, status`,
+    [id]
+  );
+  if (!result.rowCount) return Response.json({ error: "Contrato nao encontrado." }, { status: 404 });
+  return Response.json({ contract: rowToCamel(result.rows[0]) });
+}
