@@ -33,6 +33,7 @@ import {
   Siren,
   Smartphone,
   User,
+  UserCog,
   UserCheck,
   X
 } from "lucide-react";
@@ -528,6 +529,7 @@ export function MasterLayout({ title, children }: { title: string; children: Rea
   const masterLinks = [
     { href: "/master/clientes", label: "Clientes", icon: BuildingIcon },
     { href: "/master/contratos", label: "Contratos", icon: FileSignature },
+    { href: "/master/usuarios", label: "Usuarios", icon: UserCog },
     { href: "/admin/dashboard", label: "Operacao", icon: Radio }
   ];
   return (
