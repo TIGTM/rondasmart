@@ -1215,7 +1215,6 @@ export function MobileHome() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: "Ronda iniciada pelo app" })
       });
-      localStorage.removeItem("ronda-smart-scanned");
       router.push("/mobile/ronda");
     } catch (err) {
       show({ title: "Falha ao iniciar", text: err instanceof Error ? err.message : "Tente novamente." });
@@ -1229,12 +1228,12 @@ export function MobileHome() {
       <ToastView toast={toast} />
       <div className="space-y-4">
         <div><p className="text-sm font-bold text-blue-600">Ola, {userName}</p><h1 className="text-2xl font-black">Status: {userStatus}</h1></div>
-        <Card><CardContent><p className="text-sm text-slate-500">Operacao atual</p><p className="text-xl font-black">{operation?.patrol?.name ?? "Nenhuma ronda em andamento"}</p><p className="mt-3 text-sm font-semibold text-slate-500">{operation?.patrol?.condominiumName ?? "Condominio conforme seu cadastro"}</p><p className="text-sm font-semibold text-blue-600">{operation?.patrol ? `${operation.checkpoints.filter((item) => item.visitedAt).length} de ${operation.checkpoints.length} pontos validados` : "Inicie uma ronda para carregar os pontos"}</p></CardContent></Card>
+        <Card><CardContent><p className="text-sm text-slate-500">Execucao atual</p><p className="text-xl font-black">{operation?.patrol?.name ?? "Nenhuma ronda em andamento"}</p><p className="mt-3 text-sm font-semibold text-slate-500">{operation?.patrol?.condominiumName ?? "Condominio conforme seu cadastro"}</p><p className="text-sm font-semibold text-blue-600">{operation?.patrol ? `${operation.checkpoints.filter((item) => item.visitedAt).length} de ${operation.checkpoints.length} visitas desta ronda validadas` : "Inicie uma nova execucao para carregar os pontos pendentes"}</p></CardContent></Card>
         <Button size="lg" className="w-full py-6 text-lg" onClick={startPatrol} disabled={starting}>
           {starting ? <Loader2 className="animate-spin" /> : <Radio />}
           {operation?.patrol ? "Continuar Ronda" : "Iniciar Ronda"}
         </Button>
-        <Card><CardContent><p className="font-black">Pontos da operacao</p><p className="mt-2 text-sm text-slate-500">{operation?.checkpoints.length ? `${operation.checkpoints.length} pontos cadastrados para sua ronda.` : "Nenhum ponto cadastrado para este vigilante."}</p></CardContent></Card>
+        <Card><CardContent><p className="font-black">Pontos da ronda</p><p className="mt-2 text-sm text-slate-500">{operation?.checkpoints.length ? `${operation.checkpoints.length} pontos cadastrados. Eles voltam a ficar pendentes em cada nova execucao de ronda.` : "Nenhum ponto cadastrado para este vigilante."}</p></CardContent></Card>
       </div>
     </MobileShell>
   );
@@ -1243,7 +1242,6 @@ export function MobileHome() {
 export function MobileRonda() {
   const { toast, show } = useToast();
   const router = useRouter();
-  const [scanned, setScanned] = useState<string[]>([]);
   const [rondaData, setRondaData] = useState<MobileRondaData | null>(null);
   const [loading, setLoading] = useState(true);
   const [finishing, setFinishing] = useState(false);
@@ -1253,11 +1251,7 @@ export function MobileRonda() {
     try {
       const data = await apiJson<MobileRondaData>("/api/mobile/ronda");
       setRondaData(data);
-      const visited = data.checkpoints.filter((item) => item.visitedAt).map((item) => item.name);
-      localStorage.setItem("ronda-smart-scanned", JSON.stringify(visited));
-      setScanned(visited);
     } catch {
-      setScanned(JSON.parse(localStorage.getItem("ronda-smart-scanned") ?? "[]") as string[]);
       setRondaData(null);
     } finally {
       setLoading(false);
@@ -1272,10 +1266,8 @@ export function MobileRonda() {
     setFinishing(true);
     try {
       await apiJson("/api/patrols/finish", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      localStorage.removeItem("ronda-smart-scanned");
-      setScanned([]);
-      setRondaData((current) => current ? { ...current, patrol: current.patrol ? { ...current.patrol, status: "Finalizada" } : null } : current);
-      show({ title: "Ronda finalizada", text: "Status sincronizado com a central." });
+      setRondaData((current) => current ? { ...current, patrol: null, checkpoints: current.checkpoints.map((item) => ({ ...item, visitedAt: null, photoUrl: null, notes: null })) } : current);
+      show({ title: "Ronda finalizada", text: "Esta execucao foi encerrada. A proxima ronda comeca com os pontos pendentes novamente." });
     } catch (err) {
       show({ title: "Nao foi possivel finalizar", text: err instanceof Error ? err.message : "Tente novamente." });
     } finally {
@@ -1287,7 +1279,8 @@ export function MobileRonda() {
         label: item.name,
         location: item.location,
         qrToken: item.qrToken,
-        done: Boolean(item.visitedAt) || scanned.includes(item.name)
+        done: Boolean(item.visitedAt),
+        visitedAt: item.visitedAt
       })) ?? [];
   const doneCount = checklist.filter((item) => item.done).length;
   const progress = checklist.length ? Math.round((doneCount / checklist.length) * 100) : 0;
@@ -1296,8 +1289,8 @@ export function MobileRonda() {
     <MobileShell title="Ronda em execucao">
       <ToastView toast={toast} />
       <div className="space-y-4">
-        <Card><CardContent><div className="flex justify-between gap-3"><div><p className="text-sm text-slate-500">{currentPatrol?.condominiumName ?? "Sem condominio vinculado"}</p><h1 className="text-2xl font-black">{currentPatrol?.name ?? "Nenhuma ronda em andamento"}</h1></div>{currentPatrol && <StatusBadge status={currentPatrol.status} />}</div><div className="mt-4 h-3 rounded-full bg-slate-100"><div className="h-3 rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} /></div><p className="mt-2 text-sm font-semibold text-slate-500">{loading ? "Carregando pontos..." : `${doneCount} concluidos, ${checklist.length - doneCount} pendentes`}</p></CardContent></Card>
-        {checklist.length ? <Card><CardContent className="space-y-3">{checklist.map((item) => <div key={item.label} className="flex items-center gap-3 rounded-lg bg-slate-50 p-3 font-semibold"><span className={cn("grid h-6 w-6 place-items-center rounded-full", item.done ? "bg-green-500 text-white" : "bg-white text-slate-400 ring-1 ring-slate-200")}>{item.done ? <Check size={14} /> : "o"}</span><span className="flex-1"><span className="block">{item.label}</span>{item.qrToken && <span className="block text-xs font-bold text-blue-600">{item.qrToken}</span>}</span></div>)}</CardContent></Card> : !loading && <EmptyState text="Nenhum ponto cadastrado para esta operacao." />}
+        <Card><CardContent><div className="flex justify-between gap-3"><div><p className="text-sm text-slate-500">{currentPatrol?.condominiumName ?? "Sem condominio vinculado"}</p><h1 className="text-2xl font-black">{currentPatrol?.name ?? "Nenhuma ronda em andamento"}</h1></div>{currentPatrol && <StatusBadge status={currentPatrol.status} />}</div><div className="mt-4 h-3 rounded-full bg-slate-100"><div className="h-3 rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} /></div><p className="mt-2 text-sm font-semibold text-slate-500">{loading ? "Carregando pontos..." : `${doneCount} visitas validadas nesta execucao, ${checklist.length - doneCount} pendentes`}</p></CardContent></Card>
+        {checklist.length ? <Card><CardContent className="space-y-3">{checklist.map((item) => <div key={item.label} className="flex items-center gap-3 rounded-lg bg-slate-50 p-3 font-semibold"><span className={cn("grid h-6 w-6 place-items-center rounded-full", item.done ? "bg-green-500 text-white" : "bg-white text-slate-400 ring-1 ring-slate-200")}>{item.done ? <Check size={14} /> : "o"}</span><span className="flex-1"><span className="block">{item.label}</span>{item.qrToken && <span className="block text-xs font-bold text-blue-600">{item.qrToken}</span>}{item.visitedAt && <span className="block text-xs font-semibold text-green-700">Validado nesta ronda</span>}</span></div>)}</CardContent></Card> : !loading && <EmptyState text="Nenhum ponto cadastrado para esta operacao." />}
         <div className="grid grid-cols-2 gap-3"><Link href="/mobile/scanner"><Button className="w-full"><ScanLine size={16} />Escanear QR</Button></Link><Link href="/mobile/foto"><Button variant="outline" className="w-full"><Camera size={16} />Foto</Button></Link><Link href="/mobile/ocorrencia"><Button variant="outline" className="w-full"><ShieldAlert size={16} />Ocorrencia</Button></Link><Button variant="secondary" onClick={finishPatrol} disabled={finishing || !currentPatrol}>{finishing ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}Finalizar</Button></div>
         {!currentPatrol && !loading && <Button className="w-full" onClick={() => router.push("/mobile/home")}><Radio size={16} />Iniciar nova ronda</Button>}
         <Link href="/mobile/panico"><Button variant="danger" className="w-full"><Siren size={18} />Botao de panico</Button></Link>
@@ -1378,21 +1371,18 @@ export function MobileScanner() {
       }
       const data = await response.json();
       const checkpointName = data.checkpoint?.name ?? "Garagem G1";
-      const visitedNames = Array.isArray(data.visits)
-        ? data.visits.filter((visit: any) => visit.visitedAt).map((visit: any) => String(visit.name))
-        : [checkpointName];
-      const next = Array.from(new Set(visitedNames));
-      localStorage.setItem("ronda-smart-scanned", JSON.stringify(next));
+      const completed = Array.isArray(data.visits) ? data.visits.filter((visit: any) => visit.visitedAt).length : 1;
+      const total = Array.isArray(data.visits) ? data.visits.length : completed;
       sessionStorage.removeItem(PENDING_PHOTO_KEY);
       setPendingPhoto(false);
       scanningRef.current = true;
       setLastScan({
         checkpointName,
-        completed: next.length,
-        total: Array.isArray(data.visits) ? data.visits.length : next.length,
+        completed,
+        total,
         patrolId: data.patrolId
       });
-      show({ title: "QR Code validado", text: `${checkpointName} concluido e sincronizado com a central.` });
+      show({ title: "Visita validada", text: `${checkpointName} foi registrado nesta execucao de ronda.` });
     } catch (err) {
       scanningRef.current = false;
       show({ title: "Leitura nao enviada", text: err instanceof Error ? err.message : "Tente novamente." });
