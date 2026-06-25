@@ -166,7 +166,8 @@ export function MasterContractsPage() {
             <div className="grid gap-4 p-5 md:grid-cols-2">
               <Select name="companyId" required className="md:col-span-2"><option value="">Selecione o cliente</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</Select>
               <Input name="title" placeholder="Titulo do contrato" className="md:col-span-2" />
-              <Input name="monthlyAmount" placeholder="Valor mensal, ex: 499,90" required />
+              <Input name="setupAmount" placeholder="Valor da implantacao" defaultValue="250,00" required />
+              <Input name="monthlyAmount" placeholder="Valor mensal" defaultValue="250,00" required />
               <Input name="startDate" type="date" required />
               <Textarea name="notes" placeholder="Condicoes adicionais, prazo minimo, implantacao ou observacoes" className="md:col-span-2" />
               <p className="text-xs font-semibold text-slate-500 md:col-span-2">O sistema gera um contrato-base com os dados do cliente. Recomenda-se revisao juridica do texto definitivo da sua operacao.</p>

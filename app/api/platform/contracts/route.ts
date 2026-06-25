@@ -48,6 +48,7 @@ export async function POST(request: Request) {
     companyName: company.name,
     companyDocument: company.document,
     plan: company.plan,
+    setupAmount: body.setupAmount,
     monthlyAmount: body.monthlyAmount,
     startDate: body.startDate,
     notes: body.notes

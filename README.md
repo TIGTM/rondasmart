@@ -94,6 +94,7 @@ docker compose up -d --build
 - O master acessa `/master/contratos` para gerar, acompanhar e cancelar contratos.
 - Cada assinatura registra signatario, documento, e-mail, data/hora, IP, navegador, consentimento e hash SHA-256.
 - Configure `PUBLIC_APP_URL` com o dominio HTTPS definitivo para gerar links de assinatura corretos.
+- Para identificar a contratada no documento, configure `PROVIDER_LEGAL_NAME`, `PROVIDER_DOCUMENT`, `PROVIDER_ADDRESS` e `PROVIDER_EMAIL`. O nome padrao e `Fluir Tecnologia`.
 - O texto contratual fornecido e um modelo operacional e deve ser revisado pelo juridico antes do uso comercial.
 - O admin do cliente acessa `/admin/dashboard` e visualiza apenas dados da propria empresa.
 - O admin do cliente acessa `/admin/contratos` para consultar e imprimir as copias assinadas da propria empresa.
