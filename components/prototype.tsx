@@ -756,15 +756,17 @@ export function VigilantesPage() {
     apiJson<{ condominiums: any[] }>("/api/condominiums").then((data) => setDbCondominios(data.condominiums)).catch(() => setDbCondominios([]));
   }, []);
   async function createGuard(values: FormValues) {
+    const role = values.role === "MANAGER" ? "MANAGER" : "GUARD";
     await apiJson("/api/guards", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: values.name,
         email: values.email,
+        role,
         phone: values.phone,
         registration: values.registration,
-        shift: values.shift,
+        shift: role === "MANAGER" ? "Supervisor" : values.shift,
         condominiumId: values.condominiumId || null,
         password: values.password
       })
@@ -775,14 +777,19 @@ export function VigilantesPage() {
     id: index + 1,
     nome: v.name,
     telefone: v.phone,
+    perfil: v.role === "MANAGER" ? "Supervisor" : "Vigilante",
     condominio: v.condominiumName,
     turno: v.shift,
     status: v.status
   }));
   return (
-    <AdminLayout title="Vigilantes">
+    <AdminLayout title="Equipe operacional">
       <div className="mb-4 flex justify-end">
-        <FormModal title="Cadastrar vigilante" button="Cadastrar Vigilante" submitLabel="Salvar vigilante" onSubmit={createGuard}>
+        <FormModal title="Cadastrar usuario operacional" button="Cadastrar Usuario" submitLabel="Salvar usuario" onSubmit={createGuard}>
+          <Select name="role" required>
+            <option value="GUARD">Vigilante</option>
+            <option value="MANAGER">Supervisor</option>
+          </Select>
           <Input name="name" placeholder="Nome" required />
           <Input name="email" placeholder="E-mail de acesso" type="email" required />
           <Input name="phone" placeholder="Telefone" />
@@ -800,8 +807,8 @@ export function VigilantesPage() {
       </div>
       {error && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-600">{error}</p>}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {rows.map((v) => <Card key={v.nome}><CardContent><div className="flex items-center gap-4"><div className="grid h-12 w-12 place-items-center rounded-full bg-slate-950 font-black text-white">{v.nome.split(" ").map((p: string) => p[0]).slice(0, 2)}</div><div className="flex-1"><p className="font-black">{v.nome}</p><p className="text-sm text-slate-500">{v.condominio}</p></div><StatusBadge status={v.status} /></div><div className="mt-4 grid gap-2 text-sm text-slate-500"><span className="flex gap-2"><Phone size={16} />{v.telefone}</span><span className="flex gap-2"><Radio size={16} />{v.turno}</span></div></CardContent></Card>)}
-        {!rows.length && <div className="md:col-span-2 xl:col-span-3"><EmptyState text="Nenhum vigilante cadastrado para esta empresa." /></div>}
+        {rows.map((v) => <Card key={v.nome}><CardContent><div className="flex items-center gap-4"><div className="grid h-12 w-12 place-items-center rounded-full bg-slate-950 font-black text-white">{v.nome.split(" ").map((p: string) => p[0]).slice(0, 2)}</div><div className="flex-1"><p className="font-black">{v.nome}</p><p className="text-sm text-slate-500">{v.perfil}{v.condominio ? ` - ${v.condominio}` : ""}</p></div><StatusBadge status={v.status} /></div><div className="mt-4 grid gap-2 text-sm text-slate-500"><span className="flex gap-2"><Phone size={16} />{v.telefone || "Sem telefone"}</span><span className="flex gap-2"><Radio size={16} />{v.turno}</span></div></CardContent></Card>)}
+        {!rows.length && <div className="md:col-span-2 xl:col-span-3"><EmptyState text="Nenhum usuario operacional cadastrado para esta empresa." /></div>}
       </div>
     </AdminLayout>
   );
