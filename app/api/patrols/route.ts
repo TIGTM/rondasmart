@@ -80,11 +80,25 @@ export async function POST(request: Request) {
   );
   if (!condominium.rowCount) return Response.json({ error: "Condominio invalido para esta empresa." }, { status: 400 });
 
+  const guardId = body.guardId ?? user?.id;
+  if (body.guardId) {
+    const guard = await query(
+      `SELECT id
+       FROM users
+       WHERE id = $1
+         AND role = 'GUARD'
+         AND ($2::text = 'SUPER_ADMIN' OR company_id = $3)
+         AND (condominium_id IS NULL OR condominium_id = $4)`,
+      [body.guardId, user?.role, user?.companyId, condominiumId]
+    );
+    if (!guard.rowCount) return Response.json({ error: "Vigilante invalido para esta empresa ou condominio." }, { status: 400 });
+  }
+
   const result = await query(
     `INSERT INTO patrols (condominium_id, guard_id, name, status, started_at)
      VALUES ($1,$2,$3,'Em andamento',now())
      RETURNING *`,
-    [condominiumId, body.guardId ?? user?.id, body.name ?? "Ronda em execucao"]
+    [condominiumId, guardId, body.name ?? "Ronda em execucao"]
   );
   return Response.json({ patrol: rowsToCamel(result.rows)[0] }, { status: 201 });
 }

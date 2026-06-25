@@ -60,6 +60,7 @@ type MobileRondaData = {
   patrol: { id: string; name: string; status: string; condominiumName?: string | null; startedAt?: string | null } | null;
   checkpoints: MobileCheckpoint[];
 };
+const PENDING_PHOTO_KEY = "ronda-smart-pending-photo";
 type PatrolRow = {
   id: string;
   createdAt?: string | null;
@@ -144,7 +145,7 @@ function Logo() {
   );
 }
 
-function InstallBanner() {
+function InstallBanner({ aboveNavigation = false }: { aboveNavigation?: boolean }) {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -153,7 +154,7 @@ function InstallBanner() {
   }, []);
   if (!visible) return null;
   return (
-    <div className="fixed inset-x-3 bottom-3 z-40 rounded-lg bg-slate-950 p-3 text-white shadow-soft md:hidden">
+    <div className={cn("fixed inset-x-3 z-40 rounded-lg bg-slate-950 p-3 text-white shadow-soft md:hidden", aboveNavigation ? "bottom-24" : "bottom-3")}>
       <div className="flex items-center gap-3">
         <Smartphone className="text-blue-300" size={22} />
         <p className="flex-1 text-sm">Adicione o Ronda Smart a Tela Inicial para usar como aplicativo.</p>
@@ -166,8 +167,8 @@ function InstallBanner() {
 export function LoginPage() {
   const router = useRouter();
   const { toast, show } = useToast();
-  const [email, setEmail] = useState("admin@rondasmart.com.br");
-  const [password, setPassword] = useState("rondasmart-demo");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -213,9 +214,9 @@ export function LoginPage() {
                 Instalar App
               </Button>
             </div>
-            <div className="flex justify-between text-sm font-medium text-blue-600">
-              <a href="#">Esqueci minha senha</a>
-              <a href="#">Solicitar acesso</a>
+            <div className="flex justify-between gap-4 text-sm font-medium text-blue-600">
+              <button type="button" onClick={() => show({ title: "Recuperacao de acesso", text: "Solicite a redefinicao ao administrador da sua empresa." })}>Esqueci minha senha</button>
+              <button type="button" onClick={() => show({ title: "Solicitacao de acesso", text: "Peça ao administrador da sua empresa para criar seu usuario." })}>Solicitar acesso</button>
             </div>
           </div>
         </section>
@@ -229,13 +230,13 @@ export function LoginPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="rounded-lg border border-white/10 bg-white/10 p-5 backdrop-blur">
                 <Radio className="text-blue-300" />
-                <p className="mt-8 text-4xl font-black">18</p>
-                <p className="text-sm text-slate-300">rondas hoje</p>
+                <p className="mt-8 text-2xl font-black">Operacao online</p>
+                <p className="text-sm text-slate-300">rondas sincronizadas</p>
               </div>
               <div className="rounded-lg border border-white/10 bg-white/10 p-5 backdrop-blur">
                 <MapPin className="text-green-300" />
-                <p className="mt-8 text-4xl font-black">96%</p>
-                <p className="text-sm text-slate-300">pontos validados</p>
+                <p className="mt-8 text-2xl font-black">QR seguro</p>
+                <p className="text-sm text-slate-300">pontos rastreaveis</p>
               </div>
               <div className="col-span-2 rounded-lg border border-white/10 bg-white/10 p-5 backdrop-blur">
                 <MockMap dark />
@@ -280,7 +281,7 @@ export function AdminLayout({ title, children }: { title: string; children: Reac
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <button aria-label="Fechar menu" className="absolute inset-0 bg-slate-950/50" onClick={() => setMobileMenuOpen(false)} />
-          <aside className="relative h-full w-80 max-w-[86vw] border-r border-slate-200 bg-white p-5 shadow-2xl">
+          <aside className="relative h-full w-80 max-w-[86vw] overflow-y-auto border-r border-slate-200 bg-white p-5 shadow-2xl">
             <div className="flex items-center justify-between">
               <Logo />
               <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(false)} aria-label="Fechar menu">
@@ -303,8 +304,9 @@ export function AdminLayout({ title, children }: { title: string; children: Reac
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon"><Bell size={18} /></Button>
-              <LogoutButton />
+              <Link href="/admin/ocorrencias"><Button variant="outline" size="icon" aria-label="Ver ocorrencias"><Bell size={18} /></Button></Link>
+              <LogoutButton className="hidden sm:inline-flex" />
+              <LogoutButton compact className="sm:hidden" />
             </div>
           </div>
         </header>
@@ -499,8 +501,8 @@ function FormModal({
     <>
       <Button onClick={() => setOpen(true)}><Plus size={16} />{button}</Button>
       {open && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4">
-          <form onSubmit={submit} className="w-full max-w-xl rounded-lg bg-white shadow-soft">
+        <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/50 p-4">
+          <form onSubmit={submit} className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-lg bg-white shadow-soft">
             <div className="flex items-center justify-between border-b border-slate-100 p-5">
               <h2 className="text-xl font-black">{title}</h2>
               <button type="button" onClick={() => setOpen(false)}><X /></button>
@@ -525,7 +527,8 @@ export function MasterLayout({ title, children }: { title: string; children: Rea
   const pathname = usePathname();
   const masterLinks = [
     { href: "/master/clientes", label: "Clientes", icon: BuildingIcon },
-    { href: "/master/contratos", label: "Contratos", icon: FileSignature }
+    { href: "/master/contratos", label: "Contratos", icon: FileSignature },
+    { href: "/admin/dashboard", label: "Operacao", icon: Radio }
   ];
   return (
     <div className="min-h-screen bg-slate-50">
@@ -536,10 +539,6 @@ export function MasterLayout({ title, children }: { title: string; children: Rea
             const Icon = item.icon;
             return <Link key={item.href} href={item.href} className={cn("flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold", pathname === item.href ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-100")}><Icon size={18} />{item.label}</Link>;
           })}
-          <Link href="/admin/dashboard" className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100">
-            <Radio size={18} />
-            Operacao
-          </Link>
         </nav>
       </aside>
       <div className="lg:pl-72">
@@ -549,7 +548,8 @@ export function MasterLayout({ title, children }: { title: string; children: Rea
               <p className="text-xs font-bold uppercase text-blue-600">Painel master</p>
               <h1 className="text-xl font-black tracking-tight md:text-2xl">{title}</h1>
             </div>
-            <LogoutButton />
+            <LogoutButton className="hidden sm:inline-flex" />
+            <LogoutButton compact className="sm:hidden" />
           </div>
           <nav className="mt-3 flex gap-2 overflow-x-auto lg:hidden">
             {masterLinks.map((item) => <Link key={item.href} href={item.href} className={cn("whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold", pathname === item.href ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-600")}>{item.label}</Link>)}
@@ -704,7 +704,7 @@ export function CondominiosPage() {
   );
 }
 
-function LogoutButton({ mobileMenuClose, className }: { mobileMenuClose?: () => void; className?: string }) {
+function LogoutButton({ mobileMenuClose, className, compact = false }: { mobileMenuClose?: () => void; className?: string; compact?: boolean }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
@@ -717,9 +717,9 @@ function LogoutButton({ mobileMenuClose, className }: { mobileMenuClose?: () => 
   }
 
   return (
-    <Button variant="outline" className={className} onClick={logout} disabled={loading}>
+    <Button variant="outline" size={compact ? "icon" : "md"} className={className} onClick={logout} disabled={loading} aria-label={compact ? "Sair" : undefined}>
       {loading ? <Loader2 className="animate-spin" size={16} /> : <LogOut size={16} />}
-      Sair
+      {!compact && "Sair"}
     </Button>
   );
 }
@@ -1018,37 +1018,63 @@ function Timeline({ items }: { items: string[] }) {
 }
 
 function MiniStat({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs font-bold uppercase text-slate-400">{label}</p><p className="mt-1 text-xl font-black">{value}</p></div>;
-}
-
-function Filters({ labels }: { labels: string[] }) {
-  return <Card><CardContent className="grid gap-3 md:grid-cols-4">{labels.map((label) => <Select key={label}><option>{label}</option></Select>)}</CardContent></Card>;
+  return <div className="min-w-0 rounded-lg bg-slate-50 p-3"><p className="text-xs font-bold uppercase text-slate-400">{label}</p><p className="mt-1 break-words text-base font-black sm:text-xl">{value}</p></div>;
 }
 
 export function OcorrenciasPage() {
   const [dbOcorrencias, setDbOcorrencias] = useState<any[]>([]);
   const [error, setError] = useState("");
-  useEffect(() => {
-    apiJson<{ incidents: any[] }>("/api/incidents").then((data) => setDbOcorrencias(data.incidents)).catch((err) => {
+  const [filters, setFilters] = useState({ condominium: "", type: "", status: "", date: "" });
+  async function loadIncidents() {
+    await apiJson<{ incidents: any[] }>("/api/incidents").then((data) => setDbOcorrencias(data.incidents)).catch((err) => {
       setDbOcorrencias([]);
       setError(err instanceof Error ? err.message : "Nao foi possivel carregar as ocorrencias.");
     });
-  }, []);
+  }
+  useEffect(() => { void loadIncidents(); }, []);
+  async function updateIncident(id: string, status: string) {
+    try {
+      await apiJson(`/api/incidents/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status })
+      });
+      await loadIncidents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel atualizar a ocorrencia.");
+    }
+  }
   const rows = dbOcorrencias.map((o) => ({
     id: o.id,
     tipo: o.type,
+    condominio: o.condominiumName ?? "Sem condominio",
     local: o.location,
     descricao: o.description,
     data: o.createdAt ? new Date(o.createdAt).toLocaleString("pt-BR") : "-",
+    dataIso: o.createdAt ? String(o.createdAt).slice(0, 10) : "",
     responsavel: o.guardName ?? "-",
-    status: o.status
-  }));
+    status: o.status,
+    foto: o.photoUrl
+  })).filter((incident) =>
+    (!filters.condominium || incident.condominio === filters.condominium) &&
+    (!filters.type || incident.tipo === filters.type) &&
+    (!filters.status || incident.status === filters.status) &&
+    (!filters.date || incident.dataIso === filters.date)
+  );
+  const condominiums = Array.from(new Set(dbOcorrencias.map((item) => item.condominiumName ?? "Sem condominio"))).sort();
+  const types = Array.from(new Set(dbOcorrencias.map((item) => item.type))).sort();
+  const statuses = Array.from(new Set(dbOcorrencias.map((item) => item.status))).sort();
   return (
     <AdminLayout title="Ocorrencias">
-      <Filters labels={["Condominio", "Tipo", "Status", "Data"]} />
+      <Card><CardContent className="grid gap-3 md:grid-cols-4">
+        <Select value={filters.condominium} onChange={(event) => setFilters({ ...filters, condominium: event.target.value })}><option value="">Todos os condominios</option>{condominiums.map((value) => <option key={value}>{value}</option>)}</Select>
+        <Select value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}><option value="">Todos os tipos</option>{types.map((value) => <option key={value}>{value}</option>)}</Select>
+        <Select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">Todos os status</option>{statuses.map((value) => <option key={value}>{value}</option>)}</Select>
+        <Input type="date" value={filters.date} onChange={(event) => setFilters({ ...filters, date: event.target.value })} />
+      </CardContent></Card>
       {error && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-600">{error}</p>}
       <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {rows.map((o) => <Card key={o.id} className={o.tipo.includes("Emergencia") ? "border-red-200" : ""}><div className="h-36 rounded-t-lg bg-[linear-gradient(135deg,#e2e8f0,#f8fafc)]"><div className="flex h-full items-center justify-center text-slate-400"><Camera size={34} /></div></div><CardContent><div className="flex items-start justify-between gap-2"><h3 className="font-black">{o.tipo}</h3><StatusBadge status={o.status} /></div><p className="mt-2 text-sm text-slate-500">{o.descricao}</p><div className="mt-4 space-y-1 text-sm font-medium text-slate-600"><p>{o.local}</p><p>{o.data}</p><p>{o.responsavel}</p></div></CardContent></Card>)}
+        {rows.map((o) => <Card key={o.id} className={o.tipo.includes("Emergencia") ? "border-red-200" : ""}><div className="h-36 overflow-hidden rounded-t-lg bg-[linear-gradient(135deg,#e2e8f0,#f8fafc)]">{o.foto ? <img src={o.foto} alt={`Evidencia de ${o.tipo}`} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-slate-400"><Camera size={34} /></div>}</div><CardContent><div className="flex items-start justify-between gap-2"><h3 className="font-black">{o.tipo}</h3><StatusBadge status={o.status} /></div><p className="mt-2 text-sm text-slate-500">{o.descricao}</p><div className="mt-4 space-y-1 text-sm font-medium text-slate-600"><p>{o.condominio} - {o.local}</p><p>{o.data}</p><p>{o.responsavel}</p></div><div className="mt-4 flex flex-wrap gap-2">{o.status === "Aberta" && <Button size="sm" variant="outline" onClick={() => updateIncident(o.id, "Em analise")}>Iniciar analise</Button>}{o.status !== "Resolvida" && <Button size="sm" onClick={() => updateIncident(o.id, "Resolvida")}><Check size={14} />Resolver</Button>}{o.status === "Resolvida" && <Button size="sm" variant="outline" onClick={() => updateIncident(o.id, "Aberta")}>Reabrir</Button>}</div></CardContent></Card>)}
         {!rows.length && <div className="md:col-span-2 xl:col-span-3"><EmptyState text="Nenhuma ocorrencia registrada para esta empresa." /></div>}
       </div>
     </AdminLayout>
@@ -1127,6 +1153,7 @@ export function RelatoriosPage() {
 
 function MobileShell({ title, children }: { title: string; children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const items = [
     { href: "/mobile/home", label: "Inicio", icon: Home },
     { href: "/mobile/ronda", label: "Rondas", icon: Radio },
@@ -1138,9 +1165,9 @@ function MobileShell({ title, children }: { title: string; children: React.React
       <div className="mx-auto min-h-screen w-full max-w-[430px] bg-slate-50 shadow-2xl sm:min-h-[860px] sm:overflow-hidden sm:rounded-[32px]">
         <header className="bg-slate-950 px-5 pb-5 pt-8 text-white">
           <div className="flex items-center justify-between">
-            <Link href="/login"><ArrowLeft size={20} /></Link>
+            {pathname === "/mobile/home" ? <Shield size={20} aria-hidden="true" /> : <button type="button" onClick={() => router.back()} aria-label="Voltar"><ArrowLeft size={20} /></button>}
             <p className="font-black">{title}</p>
-            <Bell size={20} />
+            <Link href="/mobile/perfil" aria-label="Abrir perfil"><User size={20} /></Link>
           </div>
         </header>
         <section className="px-4 py-5 pb-24">{children}</section>
@@ -1151,7 +1178,7 @@ function MobileShell({ title, children }: { title: string; children: React.React
           })}
         </nav>
       </div>
-      <InstallBanner />
+      <InstallBanner aboveNavigation />
     </main>
   );
 }
@@ -1160,17 +1187,25 @@ export function MobileHome() {
   const router = useRouter();
   const { toast, show } = useToast();
   const [userName, setUserName] = useState("Usuario");
+  const [userStatus, setUserStatus] = useState("Disponivel");
   const [operation, setOperation] = useState<MobileRondaData | null>(null);
   const [starting, setStarting] = useState(false);
 
   useEffect(() => {
-    apiJson<{ user: { name: string } | null }>("/api/auth/me")
-      .then((data) => setUserName(data.user?.name ?? "Usuario"))
+    apiJson<{ user: { name: string; status?: string | null } | null }>("/api/auth/me")
+      .then((data) => {
+        setUserName(data.user?.name ?? "Usuario");
+        setUserStatus(data.user?.status ?? "Disponivel");
+      })
       .catch(() => setUserName("Usuario"));
     apiJson<MobileRondaData>("/api/mobile/ronda").then(setOperation).catch(() => setOperation(null));
   }, []);
 
   async function startPatrol() {
+    if (operation?.patrol) {
+      router.push("/mobile/ronda");
+      return;
+    }
     setStarting(true);
     try {
       await apiJson("/api/patrols", {
@@ -1191,11 +1226,11 @@ export function MobileHome() {
     <MobileShell title="Inicio">
       <ToastView toast={toast} />
       <div className="space-y-4">
-        <div><p className="text-sm font-bold text-blue-600">Ola, {userName}</p><h1 className="text-2xl font-black">Status: Em Servico</h1></div>
+        <div><p className="text-sm font-bold text-blue-600">Ola, {userName}</p><h1 className="text-2xl font-black">Status: {userStatus}</h1></div>
         <Card><CardContent><p className="text-sm text-slate-500">Operacao atual</p><p className="text-xl font-black">{operation?.patrol?.name ?? "Nenhuma ronda em andamento"}</p><p className="mt-3 text-sm font-semibold text-slate-500">{operation?.patrol?.condominiumName ?? "Condominio conforme seu cadastro"}</p><p className="text-sm font-semibold text-blue-600">{operation?.patrol ? `${operation.checkpoints.filter((item) => item.visitedAt).length} de ${operation.checkpoints.length} pontos validados` : "Inicie uma ronda para carregar os pontos"}</p></CardContent></Card>
         <Button size="lg" className="w-full py-6 text-lg" onClick={startPatrol} disabled={starting}>
           {starting ? <Loader2 className="animate-spin" /> : <Radio />}
-          Iniciar Ronda
+          {operation?.patrol ? "Continuar Ronda" : "Iniciar Ronda"}
         </Button>
         <Card><CardContent><p className="font-black">Pontos da operacao</p><p className="mt-2 text-sm text-slate-500">{operation?.checkpoints.length ? `${operation.checkpoints.length} pontos cadastrados para sua ronda.` : "Nenhum ponto cadastrado para este vigilante."}</p></CardContent></Card>
       </div>
@@ -1230,6 +1265,8 @@ export function MobileRonda() {
   useEffect(() => { void loadRonda(); }, []);
 
   async function finishPatrol() {
+    const pending = checklist.filter((item) => !item.done).length;
+    if (pending > 0 && !window.confirm(`Ainda existem ${pending} ponto(s) pendente(s). Deseja finalizar mesmo assim?`)) return;
     setFinishing(true);
     try {
       await apiJson("/api/patrols/finish", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
@@ -1273,6 +1310,7 @@ function useCamera() {
   const [cameraError, setCameraError] = useState("");
 
   async function startCamera() {
+    stopCamera();
     setCameraState("loading");
     setCameraError("");
     try {
@@ -1296,7 +1334,7 @@ function useCamera() {
   }
 
   useEffect(() => stopCamera, []);
-  return { videoRef, cameraState, cameraError, startCamera };
+  return { videoRef, cameraState, cameraError, startCamera, stopCamera };
 }
 
 export function MobileScanner() {
@@ -1306,9 +1344,14 @@ export function MobileScanner() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scannerCanvasRef = useRef<HTMLCanvasElement>(null);
   const scanningRef = useRef(false);
-  const [qrToken, setQrToken] = useState("RS-006");
+  const [qrToken, setQrToken] = useState("");
+  const [pendingPhoto, setPendingPhoto] = useState(false);
   const [validating, setValidating] = useState(false);
   const [lastScan, setLastScan] = useState<{ checkpointName: string; completed: number; total: number; patrolId: string } | null>(null);
+
+  useEffect(() => {
+    setPendingPhoto(Boolean(sessionStorage.getItem(PENDING_PHOTO_KEY)));
+  }, []);
 
   async function validateQr(nextToken = qrToken) {
     const token = nextToken.trim().toUpperCase();
@@ -1321,7 +1364,11 @@ export function MobileScanner() {
       const response = await fetch("/api/mobile/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ qrToken: token, notes: "Leitura registrada pelo scanner mobile" })
+        body: JSON.stringify({
+          qrToken: token,
+          notes: "Leitura registrada pelo scanner mobile",
+          photoUrl: sessionStorage.getItem(PENDING_PHOTO_KEY) || null
+        })
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -1334,6 +1381,8 @@ export function MobileScanner() {
         : [checkpointName];
       const next = Array.from(new Set(visitedNames));
       localStorage.setItem("ronda-smart-scanned", JSON.stringify(next));
+      sessionStorage.removeItem(PENDING_PHOTO_KEY);
+      setPendingPhoto(false);
       scanningRef.current = true;
       setLastScan({
         checkpointName,
@@ -1432,6 +1481,7 @@ export function MobileScanner() {
           <div className="absolute right-4 top-4 rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white">{cameraState === "on" ? "Camera ativa" : cameraState === "loading" ? "Abrindo camera" : "Leitura manual"}</div>
         </div>
         {cameraError && <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-700">{cameraError}</p>}
+        {pendingPhoto && <p className="rounded-lg bg-blue-50 p-3 text-sm font-semibold text-blue-700">A foto capturada sera anexada a esta leitura.</p>}
         {lastScan && (
           <Card className="border-green-200 bg-green-50">
             <CardContent>
@@ -1478,7 +1528,8 @@ export function MobileFoto() {
   const [captured, setCaptured] = useState(false);
   const [photo, setPhoto] = useState<string | null>(null);
   const { toast, show } = useToast();
-  const { videoRef, cameraState, cameraError, startCamera } = useCamera();
+  const router = useRouter();
+  const { videoRef, cameraState, cameraError, startCamera, stopCamera } = useCamera();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   function capturePhoto() {
     const canvas = canvasRef.current;
@@ -1487,8 +1538,19 @@ export function MobileFoto() {
       canvas.width = video.videoWidth || 640;
       canvas.height = video.videoHeight || 480;
       canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
-      setPhoto(canvas.toDataURL("image/png"));
+      const maximum = 1280;
+      const scale = Math.min(1, maximum / Math.max(canvas.width, canvas.height));
+      if (scale < 1) {
+        const resized = document.createElement("canvas");
+        resized.width = Math.round(canvas.width * scale);
+        resized.height = Math.round(canvas.height * scale);
+        resized.getContext("2d")?.drawImage(canvas, 0, 0, resized.width, resized.height);
+        setPhoto(resized.toDataURL("image/jpeg", 0.72));
+      } else {
+        setPhoto(canvas.toDataURL("image/jpeg", 0.72));
+      }
       setCaptured(true);
+      stopCamera();
       return;
     }
     show({ title: "Camera nao ativa", text: "Abra a camera primeiro ou use HTTPS para permitir captura em tempo real." });
@@ -1505,7 +1567,12 @@ export function MobileFoto() {
         <canvas ref={canvasRef} className="hidden" />
         <Button variant="outline" className="w-full" onClick={startCamera} disabled={cameraState === "loading"}>{cameraState === "loading" ? <Loader2 className="animate-spin" size={16} /> : <Camera size={16} />}Abrir camera</Button>
         <button onClick={capturePhoto} className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-white ring-8 ring-slate-200"><span className="h-14 w-14 rounded-full bg-blue-600" /></button>
-        <Button className="w-full" disabled={!captured} onClick={() => show({ title: "Foto anexada", text: "Foto anexada a ronda." })}>Usar Foto</Button>
+        <Button className="w-full" disabled={!captured || !photo} onClick={() => {
+          if (!photo) return;
+          sessionStorage.setItem(PENDING_PHOTO_KEY, photo);
+          show({ title: "Foto pronta", text: "A foto sera anexada a proxima leitura ou ocorrencia." });
+          window.setTimeout(() => router.back(), 500);
+        }}>Usar Foto</Button>
       </div>
     </MobileShell>
   );
@@ -1514,20 +1581,31 @@ export function MobileFoto() {
 export function MobileOcorrencia() {
   const { toast, show } = useToast();
   const [type, setType] = useState("Portao aberto");
-  const [location, setLocation] = useState("Garagem G1");
+  const [location, setLocation] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("Media");
   const [loading, setLoading] = useState(false);
+  const [photo, setPhoto] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPhoto(sessionStorage.getItem(PENDING_PHOTO_KEY));
+  }, []);
 
   async function registerIncident() {
+    if (!location.trim() || !description.trim()) {
+      show({ title: "Complete a ocorrencia", text: "Informe o local e descreva o que aconteceu." });
+      return;
+    }
     setLoading(true);
     try {
       await apiJson("/api/incidents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, location, description, priority })
+        body: JSON.stringify({ type, location, description, priority, photoUrl: photo })
       });
       setDescription("");
+      setPhoto(null);
+      sessionStorage.removeItem(PENDING_PHOTO_KEY);
       show({ title: "Ocorrencia enviada", text: "Ocorrencia registrada e enviada para a central." });
     } catch (err) {
       show({ title: "Falha no envio", text: err instanceof Error ? err.message : "Tente novamente." });
@@ -1549,7 +1627,8 @@ export function MobileOcorrencia() {
         </Select>
         <Input placeholder="Local" value={location} onChange={(event) => setLocation(event.target.value)} />
         <Textarea placeholder="Descricao" value={description} onChange={(event) => setDescription(event.target.value)} />
-        <Button variant="outline" className="w-full" onClick={() => show({ title: "Foto pronta", text: "Use a tela Foto para capturar evidencia antes de registrar." })}><Camera size={16} />Anexar foto</Button>
+        {photo && <div className="overflow-hidden rounded-lg border border-blue-200 bg-blue-50 p-2"><img src={photo} alt="Evidencia pronta para envio" className="h-40 w-full rounded-md object-cover" /><p className="mt-2 text-sm font-semibold text-blue-700">Foto pronta para anexar.</p></div>}
+        <Link href="/mobile/foto"><Button variant="outline" className="w-full"><Camera size={16} />{photo ? "Trocar foto" : "Anexar foto"}</Button></Link>
         <Select value={priority} onChange={(event) => setPriority(event.target.value)}>
           <option>Baixa</option>
           <option>Media</option>
@@ -1568,24 +1647,45 @@ export function MobileOcorrencia() {
 export function MobilePanico() {
   const { toast, show } = useToast();
   const [confirm, setConfirm] = useState(false);
+  const [location, setLocation] = useState("");
+  const [sending, setSending] = useState(false);
+
+  async function sendPanic() {
+    setSending(true);
+    try {
+      await apiJson("/api/mobile/panic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ location: location.trim() || "Localizacao nao informada" })
+      });
+      setConfirm(false);
+      show({ title: "Alerta enviado", text: "Alerta enviado para a central de monitoramento." });
+    } catch (err) {
+      show({ title: "Falha no alerta", text: err instanceof Error ? err.message : "Nao foi possivel enviar para a central." });
+    } finally {
+      setSending(false);
+    }
+  }
+
   return (
     <MobileShell title="Emergencia">
       <ToastView toast={toast} />
       <div className="space-y-5 text-center">
         <AlertTriangle className="mx-auto text-red-500" size={42} />
         <p className="text-sm font-semibold text-slate-500">Use apenas em situacoes reais de risco.</p>
+        <Input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Local da emergencia (opcional)" />
         <button onClick={() => setConfirm(true)} className="pulse-soft mx-auto grid h-56 w-56 place-items-center rounded-full bg-red-500 text-2xl font-black text-white shadow-soft">ACIONAR<br />EMERGENCIA</button>
-        {confirm && <Card><CardContent><p className="font-black">Confirmar envio?</p><p className="mt-2 text-sm text-slate-500">A central de monitoramento sera avisada imediatamente.</p><div className="mt-4 grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => setConfirm(false)}>Cancelar</Button><Button variant="danger" onClick={async () => { setConfirm(false); const response = await fetch("/api/mobile/panic", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: "Garagem G1" }) }); show(response.ok ? { title: "Alerta enviado", text: "Alerta enviado para a central de monitoramento." } : { title: "Falha no alerta", text: "Nao foi possivel enviar para a central." }); }}>Enviar</Button></div></CardContent></Card>}
+        {confirm && <Card><CardContent><p className="font-black">Confirmar envio?</p><p className="mt-2 text-sm text-slate-500">A central de monitoramento sera avisada imediatamente{location.trim() ? ` sobre ${location.trim()}` : ""}.</p><div className="mt-4 grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => setConfirm(false)} disabled={sending}>Cancelar</Button><Button variant="danger" onClick={sendPanic} disabled={sending}>{sending ? <Loader2 className="animate-spin" size={16} /> : <Siren size={16} />}Enviar</Button></div></CardContent></Card>}
       </div>
     </MobileShell>
   );
 }
 
 export function MobilePerfil() {
-  const [user, setUser] = useState<{ name: string; email: string; role: string } | null>(null);
+  const [user, setUser] = useState<{ name: string; email: string; role: string; status?: string | null; shift?: string | null } | null>(null);
 
   useEffect(() => {
-    apiJson<{ user: { name: string; email: string; role: string } | null }>("/api/auth/me")
+    apiJson<{ user: { name: string; email: string; role: string; status?: string | null; shift?: string | null } | null }>("/api/auth/me")
       .then((data) => setUser(data.user))
       .catch(() => setUser(null));
   }, []);
@@ -1602,7 +1702,7 @@ export function MobilePerfil() {
       <div className="space-y-4 text-center">
         <div className="mx-auto grid h-24 w-24 place-items-center rounded-full bg-slate-950 text-3xl font-black text-white">{initials}</div>
         <div><h1 className="text-2xl font-black">{user?.name ?? "Usuario logado"}</h1><p className="text-sm text-slate-500">{user?.email ?? "Carregando perfil..."}</p></div>
-        <Card><CardContent className="space-y-3 text-left text-sm font-semibold text-slate-600"><p>Perfil: {user?.role ?? "Carregando"}</p><p>Status: Em Servico</p><p>Dados operacionais carregados conforme cadastro do cliente.</p></CardContent></Card>
+        <Card><CardContent className="space-y-3 text-left text-sm font-semibold text-slate-600"><p>Perfil: {user?.role ?? "Carregando"}</p><p>Status: {user?.status ?? "Carregando"}</p><p>Turno: {user?.shift ?? "Nao informado"}</p></CardContent></Card>
         <LogoutButton className="w-full" />
       </div>
     </MobileShell>

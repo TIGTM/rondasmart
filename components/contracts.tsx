@@ -161,7 +161,7 @@ export function MasterContractsPage() {
 
       {open && (
         <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/50 p-4">
-          <form onSubmit={createContract} className="w-full max-w-2xl rounded-lg bg-white shadow-2xl">
+          <form onSubmit={createContract} className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 p-5"><div><p className="text-xs font-bold uppercase text-blue-600">Contrato SaaS</p><h2 className="text-xl font-black">Novo contrato</h2></div><button type="button" onClick={() => setOpen(false)} aria-label="Fechar"><X /></button></div>
             <div className="grid gap-4 p-5 md:grid-cols-2">
               <Select name="companyId" required className="md:col-span-2"><option value="">Selecione o cliente</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</Select>

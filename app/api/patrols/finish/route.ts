@@ -28,9 +28,19 @@ export async function POST(request: Request) {
     `UPDATE patrols
      SET status = 'Finalizada', finished_at = now(), updated_at = now()
      WHERE id = $1
-       AND ($2::text IN ('SUPER_ADMIN','CLIENT_ADMIN','ADMIN','MANAGER') OR guard_id = $3)
+       AND (
+         $2::text = 'SUPER_ADMIN'
+         OR guard_id = $3
+         OR (
+           $2::text IN ('CLIENT_ADMIN','ADMIN','MANAGER')
+           AND EXISTS (
+             SELECT 1 FROM condominiums c
+             WHERE c.id = patrols.condominium_id AND c.company_id = $4
+           )
+         )
+       )
      RETURNING *`,
-    [patrolId, user?.role, user?.id]
+    [patrolId, user?.role, user?.id, user?.companyId]
   );
 
   if (!result.rowCount) {

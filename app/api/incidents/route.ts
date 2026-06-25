@@ -24,6 +24,16 @@ export async function POST(request: Request) {
   if (response) return response;
 
   const body = await request.json();
+  const type = String(body.type ?? "").trim();
+  const location = String(body.location ?? "").trim();
+  const description = String(body.description ?? "").trim();
+  const photoUrl = body.photoUrl ? String(body.photoUrl) : null;
+  if (!type || !location || !description) {
+    return Response.json({ error: "Tipo, local e descricao sao obrigatorios." }, { status: 400 });
+  }
+  if (photoUrl && (!photoUrl.startsWith("data:image/") || photoUrl.length > 1_500_000)) {
+    return Response.json({ error: "A foto enviada e invalida ou muito grande." }, { status: 400 });
+  }
   const condominiumId = body.condominiumId ?? user?.condominiumId ?? null;
   if (condominiumId) {
     const condominium = await query(
@@ -32,6 +42,30 @@ export async function POST(request: Request) {
     );
     if (!condominium.rowCount) return Response.json({ error: "Condominio invalido para esta empresa." }, { status: 400 });
   }
+  const guardId = user?.role === "GUARD" ? user.id : body.guardId ?? user?.id ?? null;
+  if (guardId) {
+    const guard = await query(
+      `SELECT id FROM users
+       WHERE id = $1 AND ($2::text = 'SUPER_ADMIN' OR company_id = $3)`,
+      [guardId, user?.role, user?.companyId]
+    );
+    if (!guard.rowCount) return Response.json({ error: "Usuario responsavel invalido para esta empresa." }, { status: 400 });
+  }
+  const patrolId = body.patrolId ?? null;
+  if (patrolId) {
+    const patrol = await query(
+      `SELECT p.id, p.condominium_id
+       FROM patrols p
+       JOIN condominiums c ON c.id = p.condominium_id
+       WHERE p.id = $1
+         AND ($2::text = 'SUPER_ADMIN' OR c.company_id = $3)
+         AND ($2::text <> 'GUARD' OR p.guard_id = $4)`,
+      [patrolId, user?.role, user?.companyId, user?.id]
+    );
+    if (!patrol.rowCount || (condominiumId && patrol.rows[0].condominium_id !== condominiumId)) {
+      return Response.json({ error: "Ronda invalida para esta ocorrencia." }, { status: 400 });
+    }
+  }
 
   const result = await query(
     `INSERT INTO incidents (condominium_id, patrol_id, guard_id, type, location, description, priority, status, photo_url)
@@ -39,14 +73,14 @@ export async function POST(request: Request) {
      RETURNING *`,
     [
       condominiumId,
-      body.patrolId ?? null,
-      body.guardId ?? user?.id ?? null,
-      body.type,
-      body.location ?? null,
-      body.description ?? null,
+      patrolId,
+      guardId,
+      type,
+      location,
+      description,
       body.priority ?? "Media",
       body.status ?? "Aberta",
-      body.photoUrl ?? null
+      photoUrl
     ]
   );
   return Response.json({ incident: rowsToCamel(result.rows)[0] }, { status: 201 });

@@ -8,9 +8,13 @@ export async function POST(request: Request) {
   const body = await request.json();
   const qrToken = String(body.qrToken ?? "").trim();
   const patrolId = body.patrolId ? String(body.patrolId) : null;
+  const photoUrl = body.photoUrl ? String(body.photoUrl) : null;
 
   if (!qrToken) {
     return Response.json({ error: "QR Code obrigatorio." }, { status: 400 });
+  }
+  if (photoUrl && (!photoUrl.startsWith("data:image/") || photoUrl.length > 1_500_000)) {
+    return Response.json({ error: "A foto enviada e invalida ou muito grande." }, { status: 400 });
   }
 
   const checkpoint = await query(
@@ -82,7 +86,7 @@ export async function POST(request: Request) {
        visited_at = now(),
        photo_url = COALESCE(EXCLUDED.photo_url, patrol_visits.photo_url),
        notes = EXCLUDED.notes`,
-    [activePatrolId, checkpointRow.id, body.photoUrl ?? null, body.notes ?? "Validado pelo app mobile"]
+    [activePatrolId, checkpointRow.id, photoUrl, body.notes ?? "Validado pelo app mobile"]
   );
 
   await query("UPDATE checkpoints SET last_visit_at = now(), updated_at = now() WHERE id = $1", [checkpointRow.id]);
