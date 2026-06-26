@@ -1,12 +1,23 @@
 import { requireSession } from "@/lib/auth";
 import { query, rowsToCamel } from "@/lib/db";
 
+function normalizeQrToken(value: unknown) {
+  let token = String(value ?? "").trim();
+  try {
+    const url = new URL(token);
+    token = url.searchParams.get("qr") ?? url.searchParams.get("code") ?? url.searchParams.get("token") ?? url.pathname.split("/").filter(Boolean).pop() ?? token;
+  } catch {
+    // QR Codes impressos pelo sistema carregam apenas o codigo do ponto.
+  }
+  return token.replace(/\s+/g, "").toUpperCase();
+}
+
 export async function POST(request: Request) {
   const { user, response } = await requireSession(["GUARD", "CLIENT_ADMIN", "ADMIN", "SUPER_ADMIN"]);
   if (response) return response;
 
   const body = await request.json();
-  const qrToken = String(body.qrToken ?? "").trim();
+  const qrToken = normalizeQrToken(body.qrToken);
   const patrolId = body.patrolId ? String(body.patrolId) : null;
   const photoUrl = body.photoUrl ? String(body.photoUrl) : null;
 
@@ -21,14 +32,14 @@ export async function POST(request: Request) {
     `SELECT cp.*, c.company_id
      FROM checkpoints cp
      JOIN condominiums c ON c.id = cp.condominium_id
-     WHERE cp.qr_token = $1
+     WHERE upper(regexp_replace(cp.qr_token, '[[:space:]]+', '', 'g')) = $1
        AND ($2::text = 'SUPER_ADMIN' OR c.company_id = $3)
      LIMIT 1`,
     [qrToken, user?.role, user?.companyId]
   );
 
   if (!checkpoint.rowCount) {
-    return Response.json({ error: "Ponto de ronda nao encontrado." }, { status: 404 });
+    return Response.json({ error: `Codigo ${qrToken} nao encontrado para esta empresa. Confira se o ponto foi cadastrado e imprima o QR novamente.` }, { status: 404 });
   }
 
   const checkpointRow = checkpoint.rows[0];

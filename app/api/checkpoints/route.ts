@@ -2,6 +2,10 @@ import { requireSession } from "@/lib/auth";
 import { query, rowsToCamel } from "@/lib/db";
 import { randomUUID } from "node:crypto";
 
+function normalizeQrToken(value: unknown) {
+  return String(value ?? "").trim().replace(/\s+/g, "").toUpperCase();
+}
+
 export async function GET() {
   const { user, response } = await requireSession(["SUPER_ADMIN", "CLIENT_ADMIN", "ADMIN", "MANAGER", "GUARD"]);
   if (response) return response;
@@ -23,11 +27,18 @@ export async function POST(request: Request) {
   if (response) return response;
 
   const body = await request.json();
+  const qrToken = normalizeQrToken(body.qrToken || `RS-${randomUUID().slice(0, 8)}`);
   const condominium = await query(
     "SELECT id FROM condominiums WHERE id = $1 AND ($2::text = 'SUPER_ADMIN' OR company_id = $3)",
     [body.condominiumId, user?.role, user?.companyId]
   );
   if (!condominium.rowCount) return Response.json({ error: "Condominio invalido para esta empresa." }, { status: 400 });
+
+  const duplicate = await query(
+    "SELECT id FROM checkpoints WHERE upper(regexp_replace(qr_token, '[[:space:]]+', '', 'g')) = $1 LIMIT 1",
+    [qrToken]
+  );
+  if (duplicate.rowCount) return Response.json({ error: "Ja existe um ponto com este codigo QR." }, { status: 409 });
 
   const result = await query(
     `INSERT INTO checkpoints (condominium_id, name, location, qr_token, status)
@@ -37,7 +48,7 @@ export async function POST(request: Request) {
       body.condominiumId,
       body.name,
       body.location ?? null,
-      body.qrToken ?? `RS-${randomUUID().slice(0, 8).toUpperCase()}`,
+      qrToken,
       body.status ?? "Operacional"
     ]
   );

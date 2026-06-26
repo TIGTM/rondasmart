@@ -46,7 +46,7 @@ import {
 } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
-type Toast = { title: string; text: string };
+type Toast = { title: string; text: string; tone?: "success" | "error" | "warning" };
 type FormValues = Record<string, string>;
 type MobileCheckpoint = {
   id: string;
@@ -85,6 +85,17 @@ async function apiJson<T>(url: string, options?: RequestInit) {
   return data as T;
 }
 
+function normalizeQrCode(value: string) {
+  let clean = String(value ?? "").trim();
+  try {
+    const url = new URL(clean);
+    clean = url.searchParams.get("qr") ?? url.searchParams.get("code") ?? url.searchParams.get("token") ?? url.pathname.split("/").filter(Boolean).pop() ?? clean;
+  } catch {
+    // O valor normal geralmente e o proprio codigo impresso no QR.
+  }
+  return clean.replace(/\s+/g, "").toUpperCase();
+}
+
 function useToast() {
   const [toast, setToast] = useState<Toast | null>(null);
   const show = (next: Toast) => {
@@ -96,11 +107,14 @@ function useToast() {
 
 function ToastView({ toast }: { toast: Toast | null }) {
   if (!toast) return null;
+  const error = toast.tone === "error";
+  const warning = toast.tone === "warning";
+  const Icon = error || warning ? AlertTriangle : Check;
   return (
-    <div className="fixed right-4 top-4 z-50 max-w-sm rounded-lg border border-slate-200 bg-white p-4 shadow-soft">
+    <div className={cn("fixed left-3 right-3 top-4 z-50 mx-auto max-w-sm rounded-lg border bg-white p-4 shadow-soft", error ? "border-red-200" : warning ? "border-amber-200" : "border-slate-200")}>
       <div className="flex gap-3">
-        <div className="mt-0.5 rounded-full bg-green-100 p-1 text-green-600">
-          <Check size={16} />
+        <div className={cn("mt-0.5 rounded-full p-1", error ? "bg-red-100 text-red-600" : warning ? "bg-amber-100 text-amber-600" : "bg-green-100 text-green-600")}>
+          <Icon size={16} />
         </div>
         <div>
           <p className="font-semibold text-slate-950">{toast.title}</p>
@@ -1187,7 +1201,6 @@ function MobileShell({ title, children }: { title: string; children: React.React
           })}
         </nav>
       </div>
-      <InstallBanner aboveNavigation />
     </main>
   );
 }
@@ -1319,7 +1332,14 @@ function useCamera() {
       if (!window.isSecureContext) {
         throw new Error("A camera em tempo real exige HTTPS no celular. Use o campo manual ou uma foto do QR Code por enquanto.");
       }
-      const stream = await navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      const stream = await navigator.mediaDevices?.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
+        audio: false
+      });
       if (!stream || !videoRef.current) throw new Error("Camera indisponivel");
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
@@ -1346,6 +1366,7 @@ export function MobileScanner() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scannerCanvasRef = useRef<HTMLCanvasElement>(null);
   const scanningRef = useRef(false);
+  const lastReadRef = useRef<{ token: string; at: number } | null>(null);
   const [qrToken, setQrToken] = useState("");
   const [pendingPhoto, setPendingPhoto] = useState(false);
   const [validating, setValidating] = useState(false);
@@ -1353,16 +1374,18 @@ export function MobileScanner() {
 
   useEffect(() => {
     setPendingPhoto(Boolean(sessionStorage.getItem(PENDING_PHOTO_KEY)));
+    window.setTimeout(() => { void startCamera(); }, 250);
   }, []);
 
   async function validateQr(nextToken = qrToken) {
-    const token = nextToken.trim().toUpperCase();
+    const token = normalizeQrCode(nextToken);
     if (!token) {
-      show({ title: "Informe o QR Code", text: "Digite ou capture o codigo do ponto de ronda." });
+      show({ title: "Informe o QR Code", text: "Digite ou capture o codigo do ponto de ronda.", tone: "warning" });
       return;
     }
     try {
       setValidating(true);
+      setQrToken(token);
       const response = await fetch("/api/mobile/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1392,7 +1415,7 @@ export function MobileScanner() {
       show({ title: "Visita validada", text: `${checkpointName} foi registrado nesta execucao de ronda.` });
     } catch (err) {
       scanningRef.current = false;
-      show({ title: "Leitura nao enviada", text: err instanceof Error ? err.message : "Tente novamente." });
+      show({ title: "Leitura nao enviada", text: err instanceof Error ? err.message : "Tente novamente.", tone: "error" });
     } finally {
       setValidating(false);
     }
@@ -1419,11 +1442,18 @@ export function MobileScanner() {
         const context = canvas.getContext("2d", { willReadFrequently: true });
         context?.drawImage(video, 0, 0, width, height);
         const imageData = context?.getImageData(0, 0, width, height);
-        const rawValue = imageData ? String(jsQR(imageData.data, width, height)?.data ?? "").trim() : "";
+        const rawValue = imageData ? String(jsQR(imageData.data, width, height, { inversionAttempts: "attemptBoth" })?.data ?? "").trim() : "";
         if (rawValue) {
+          const token = normalizeQrCode(rawValue);
+          const last = lastReadRef.current;
+          if (last?.token === token && Date.now() - last.at < 3500) {
+            if (active) window.requestAnimationFrame(scanFrame);
+            return;
+          }
+          lastReadRef.current = { token, at: Date.now() };
           scanningRef.current = true;
-          setQrToken(rawValue);
-          await validateQr(rawValue);
+          setQrToken(token);
+          await validateQr(token);
           window.setTimeout(() => { scanningRef.current = false; }, 1800);
         }
       } catch {
@@ -1453,17 +1483,18 @@ export function MobileScanner() {
           const context = canvas.getContext("2d", { willReadFrequently: true });
           context?.drawImage(image, 0, 0);
           const imageData = context?.getImageData(0, 0, canvas.width, canvas.height);
-          const value = imageData ? String(jsQR(imageData.data, canvas.width, canvas.height)?.data ?? "").trim() : "";
+          const value = imageData ? String(jsQR(imageData.data, canvas.width, canvas.height, { inversionAttempts: "attemptBoth" })?.data ?? "").trim() : "";
           resolve(value);
         };
         image.onerror = () => reject(new Error("Nao foi possivel ler a foto."));
         image.src = dataUrl;
       });
       if (!rawValue) throw new Error("Nenhum QR Code encontrado na imagem.");
-      setQrToken(rawValue);
-      await validateQr(rawValue);
+      const token = normalizeQrCode(rawValue);
+      setQrToken(token);
+      await validateQr(token);
     } catch (err) {
-      show({ title: "QR nao encontrado", text: err instanceof Error ? err.message : "Tente outra foto ou digite o codigo." });
+      show({ title: "QR nao encontrado", text: err instanceof Error ? err.message : "Tente outra foto ou digite o codigo.", tone: "error" });
     }
   }
 
@@ -1473,11 +1504,11 @@ export function MobileScanner() {
       <div className="space-y-4">
         <div className="relative h-80 overflow-hidden rounded-lg bg-slate-900">
           <video ref={videoRef} muted playsInline className={cn("absolute inset-0 h-full w-full object-cover", cameraState !== "on" && "hidden")} />
-          {cameraState !== "on" && <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(37,99,235,.35),transparent_36%),linear-gradient(135deg,#020617,#1e293b)]" />}
+          {cameraState !== "on" && <div className="absolute inset-0 grid place-items-center bg-slate-950 text-center text-white"><div className="px-8"><ScanLine className="mx-auto mb-3 text-blue-300" size={38} /><p className="font-black">Camera pronta para abrir</p><p className="mt-2 text-sm text-slate-300">Use a camera em tempo real, uma foto do QR ou digite o codigo impresso.</p></div></div>}
           <div className="absolute inset-8 rounded-lg border-2 border-blue-400" />
           {cameraState === "on" && <div className="scan-line absolute left-10 right-10 top-10 h-1 rounded-full bg-blue-400" />}
           <div className="absolute inset-x-6 bottom-8 text-center text-sm font-semibold text-white">{cameraState === "on" ? "Aponte para o QR Code do ponto de ronda" : "Abra a camera ou informe o codigo do QR Code"}</div>
-          <div className="absolute right-4 top-4 rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white">{cameraState === "on" ? "Camera ativa" : cameraState === "loading" ? "Abrindo camera" : "Leitura manual"}</div>
+          <div className="absolute right-4 top-4 rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white">{cameraState === "on" ? "Camera ativa" : cameraState === "loading" ? "Abrindo camera" : "Codigo manual"}</div>
         </div>
         {cameraError && <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-700">{cameraError}</p>}
         {pendingPhoto && <p className="rounded-lg bg-blue-50 p-3 text-sm font-semibold text-blue-700">A foto capturada sera anexada a esta leitura.</p>}
@@ -1498,7 +1529,7 @@ export function MobileScanner() {
             </CardContent>
           </Card>
         )}
-        <Input value={qrToken} onChange={(event) => setQrToken(event.target.value.toUpperCase())} placeholder="Codigo QR, ex: RS-006" />
+        <Input value={qrToken} onChange={(event) => setQrToken(normalizeQrCode(event.target.value))} placeholder="Codigo QR, ex: RS-006" />
         <input
           ref={fileInputRef}
           type="file"
@@ -1514,7 +1545,7 @@ export function MobileScanner() {
         <canvas ref={scannerCanvasRef} className="hidden" />
         <div className="grid grid-cols-2 gap-2">
           <Button variant="outline" onClick={startCamera} disabled={cameraState === "loading"}>{cameraState === "loading" ? <Loader2 className="animate-spin" size={16} /> : <Camera size={16} />}Abrir camera</Button>
-          <Button variant="outline" onClick={() => fileInputRef.current?.click()}><Camera size={16} />Foto do QR</Button>
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()}><Camera size={16} />Ler foto do QR</Button>
           <Button className="col-span-2" onClick={() => validateQr()} disabled={validating}>{validating ? <Loader2 className="animate-spin" size={16} /> : <QrCode size={16} />}Validar codigo</Button>
         </div>
         <Link href="/mobile/ronda"><Button variant="secondary" className="w-full">Voltar para checklist</Button></Link>
@@ -1530,6 +1561,54 @@ export function MobileFoto() {
   const router = useRouter();
   const { videoRef, cameraState, cameraError, startCamera, stopCamera } = useCamera();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    window.setTimeout(() => { void startCamera(); }, 250);
+  }, []);
+
+  function setCompressedPhotoFromCanvas(canvas: HTMLCanvasElement) {
+    const maximum = 1280;
+    const scale = Math.min(1, maximum / Math.max(canvas.width, canvas.height));
+    if (scale < 1) {
+      const resized = document.createElement("canvas");
+      resized.width = Math.round(canvas.width * scale);
+      resized.height = Math.round(canvas.height * scale);
+      resized.getContext("2d")?.drawImage(canvas, 0, 0, resized.width, resized.height);
+      setPhoto(resized.toDataURL("image/jpeg", 0.72));
+    } else {
+      setPhoto(canvas.toDataURL("image/jpeg", 0.72));
+    }
+    setCaptured(true);
+  }
+
+  async function readPhotoFromFile(file: File) {
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("Nao foi possivel abrir a foto."));
+        reader.readAsDataURL(file);
+      });
+      await new Promise<void>((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = image.naturalWidth || 1280;
+          canvas.height = image.naturalHeight || 720;
+          canvas.getContext("2d")?.drawImage(image, 0, 0);
+          setCompressedPhotoFromCanvas(canvas);
+          stopCamera();
+          resolve();
+        };
+        image.onerror = () => reject(new Error("Nao foi possivel processar a foto."));
+        image.src = dataUrl;
+      });
+    } catch (err) {
+      show({ title: "Foto nao carregada", text: err instanceof Error ? err.message : "Tente novamente.", tone: "error" });
+    }
+  }
+
   function capturePhoto() {
     const canvas = canvasRef.current;
     const video = videoRef.current;
@@ -1537,22 +1616,11 @@ export function MobileFoto() {
       canvas.width = video.videoWidth || 640;
       canvas.height = video.videoHeight || 480;
       canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const maximum = 1280;
-      const scale = Math.min(1, maximum / Math.max(canvas.width, canvas.height));
-      if (scale < 1) {
-        const resized = document.createElement("canvas");
-        resized.width = Math.round(canvas.width * scale);
-        resized.height = Math.round(canvas.height * scale);
-        resized.getContext("2d")?.drawImage(canvas, 0, 0, resized.width, resized.height);
-        setPhoto(resized.toDataURL("image/jpeg", 0.72));
-      } else {
-        setPhoto(canvas.toDataURL("image/jpeg", 0.72));
-      }
-      setCaptured(true);
+      setCompressedPhotoFromCanvas(canvas);
       stopCamera();
       return;
     }
-    show({ title: "Camera nao ativa", text: "Abra a camera primeiro ou use HTTPS para permitir captura em tempo real." });
+    fileInputRef.current?.click();
   }
   return (
     <MobileShell title="Registro de foto">
@@ -1560,12 +1628,27 @@ export function MobileFoto() {
       <div className="space-y-4 text-center">
         <div className={cn("relative grid h-80 overflow-hidden rounded-lg", captured ? "bg-[linear-gradient(135deg,#bfdbfe,#f8fafc)]" : "bg-slate-900 text-white")}>
           {photo ? <img src={photo} alt="Foto capturada" className="h-full w-full object-cover" /> : <video ref={videoRef} muted playsInline className={cn("h-full w-full object-cover", cameraState !== "on" && "hidden")} />}
-          {!photo && cameraState !== "on" && <div className="grid place-items-center"><div><Camera className="mx-auto" size={48} /><p className="mt-3 font-semibold">Capture uma evidencia do local</p><p className="mt-2 text-xs text-slate-300">A camera em tempo real pode exigir HTTPS no celular.</p></div></div>}
+          {!photo && cameraState !== "on" && <div className="grid place-items-center"><div className="px-8"><Camera className="mx-auto" size={48} /><p className="mt-3 font-semibold">Capture uma evidencia real do local</p><p className="mt-2 text-xs text-slate-300">Se a camera ao vivo nao abrir, use a camera nativa do celular.</p></div></div>}
         </div>
         {cameraError && <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-700">{cameraError}</p>}
         <canvas ref={canvasRef} className="hidden" />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void readPhotoFromFile(file);
+            event.currentTarget.value = "";
+          }}
+        />
         <Button variant="outline" className="w-full" onClick={startCamera} disabled={cameraState === "loading"}>{cameraState === "loading" ? <Loader2 className="animate-spin" size={16} /> : <Camera size={16} />}Abrir camera</Button>
-        <button onClick={capturePhoto} className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-white ring-8 ring-slate-200"><span className="h-14 w-14 rounded-full bg-blue-600" /></button>
+        <div className="grid grid-cols-2 gap-2">
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()}><Camera size={16} />Camera do celular</Button>
+          <Button onClick={capturePhoto} disabled={cameraState === "loading"}>{cameraState === "on" ? <Camera size={16} /> : <Camera size={16} />}{cameraState === "on" ? "Capturar" : "Tirar foto"}</Button>
+        </div>
         <Button className="w-full" disabled={!captured || !photo} onClick={() => {
           if (!photo) return;
           sessionStorage.setItem(PENDING_PHOTO_KEY, photo);
@@ -1585,6 +1668,7 @@ export function MobileOcorrencia() {
   const [priority, setPriority] = useState("Media");
   const [loading, setLoading] = useState(false);
   const [photo, setPhoto] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
 
   useEffect(() => {
     setPhoto(sessionStorage.getItem(PENDING_PHOTO_KEY));
@@ -1592,7 +1676,7 @@ export function MobileOcorrencia() {
 
   async function registerIncident() {
     if (!location.trim() || !description.trim()) {
-      show({ title: "Complete a ocorrencia", text: "Informe o local e descreva o que aconteceu." });
+      show({ title: "Complete a ocorrencia", text: "Informe o local e descreva o que aconteceu.", tone: "warning" });
       return;
     }
     setLoading(true);
@@ -1602,12 +1686,16 @@ export function MobileOcorrencia() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, location, description, priority, photoUrl: photo })
       });
+      setType("Portao aberto");
+      setLocation("");
       setDescription("");
+      setPriority("Media");
       setPhoto(null);
+      setSent(true);
       sessionStorage.removeItem(PENDING_PHOTO_KEY);
       show({ title: "Ocorrencia enviada", text: "Ocorrencia registrada e enviada para a central." });
     } catch (err) {
-      show({ title: "Falha no envio", text: err instanceof Error ? err.message : "Tente novamente." });
+      show({ title: "Falha no envio", text: err instanceof Error ? err.message : "Tente novamente.", tone: "error" });
     } finally {
       setLoading(false);
     }
@@ -1617,18 +1705,19 @@ export function MobileOcorrencia() {
     <MobileShell title="Registrar ocorrencia">
       <ToastView toast={toast} />
       <div className="space-y-3">
-        <Select value={type} onChange={(event) => setType(event.target.value)}>
+        {sent && <Card className="border-green-200 bg-green-50"><CardContent><div className="flex gap-3"><div className="grid h-10 w-10 place-items-center rounded-lg bg-green-500 text-white"><Check size={20} /></div><div><p className="font-black text-green-900">Ocorrencia registrada</p><p className="mt-1 text-sm font-semibold text-green-700">Os campos foram limpos e o registro ja esta na central.</p></div></div></CardContent></Card>}
+        <Select value={type} onChange={(event) => { setType(event.target.value); setSent(false); }}>
           <option>Portao aberto</option>
           <option>Pessoa suspeita</option>
           <option>Equipamento danificado</option>
           <option>Lampada queimada</option>
           <option>Vazamento</option>
         </Select>
-        <Input placeholder="Local" value={location} onChange={(event) => setLocation(event.target.value)} />
-        <Textarea placeholder="Descricao" value={description} onChange={(event) => setDescription(event.target.value)} />
+        <Input placeholder="Local" value={location} onChange={(event) => { setLocation(event.target.value); setSent(false); }} />
+        <Textarea placeholder="Descricao" value={description} onChange={(event) => { setDescription(event.target.value); setSent(false); }} />
         {photo && <div className="overflow-hidden rounded-lg border border-blue-200 bg-blue-50 p-2"><img src={photo} alt="Evidencia pronta para envio" className="h-40 w-full rounded-md object-cover" /><p className="mt-2 text-sm font-semibold text-blue-700">Foto pronta para anexar.</p></div>}
         <Link href="/mobile/foto"><Button variant="outline" className="w-full"><Camera size={16} />{photo ? "Trocar foto" : "Anexar foto"}</Button></Link>
-        <Select value={priority} onChange={(event) => setPriority(event.target.value)}>
+        <Select value={priority} onChange={(event) => { setPriority(event.target.value); setSent(false); }}>
           <option>Baixa</option>
           <option>Media</option>
           <option>Alta</option>
