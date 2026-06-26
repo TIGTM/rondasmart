@@ -1181,7 +1181,7 @@ function MobileShell({ title, children }: { title: string; children: React.React
     { href: "/mobile/home", label: "Inicio", icon: Home },
     { href: "/mobile/ronda", label: "Rondas", icon: Radio },
     { href: "/mobile/ocorrencia", label: "Ocorrencias", icon: ShieldAlert },
-    { href: "/mobile/perfil", label: "Perfil", icon: User }
+    { href: "/mobile/historico", label: "Historico", icon: FileSpreadsheet }
   ];
   return (
     <main className="min-h-screen bg-slate-950 py-0 text-slate-950 sm:py-6">
@@ -1789,6 +1789,126 @@ export function MobilePanico() {
         <Input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Local da emergencia (opcional)" />
         <button onClick={() => setConfirm(true)} className="pulse-soft mx-auto grid h-56 w-56 place-items-center rounded-full bg-red-500 text-2xl font-black text-white shadow-soft">ACIONAR<br />EMERGENCIA</button>
         {confirm && <Card><CardContent><p className="font-black">Confirmar envio?</p><p className="mt-2 text-sm text-slate-500">A central de monitoramento sera avisada imediatamente{location.trim() ? ` sobre ${location.trim()}` : ""}.</p><div className="mt-4 grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => setConfirm(false)} disabled={sending}>Cancelar</Button><Button variant="danger" onClick={sendPanic} disabled={sending}>{sending ? <Loader2 className="animate-spin" size={16} /> : <Siren size={16} />}Enviar</Button></div></CardContent></Card>}
+      </div>
+    </MobileShell>
+  );
+}
+
+type MobileHistoryPatrol = {
+  id: string;
+  name: string;
+  status: string;
+  condominiumName?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  createdAt?: string | null;
+  completedCheckpoints: number;
+  totalCheckpoints: number;
+  incidentsCount: number;
+};
+
+type MobileHistoryIncident = {
+  id: string;
+  type: string;
+  location?: string | null;
+  description?: string | null;
+  priority: string;
+  status: string;
+  condominiumName?: string | null;
+  patrolName?: string | null;
+  createdAt?: string | null;
+};
+
+export function MobileHistorico() {
+  const { toast, show } = useToast();
+  const [tab, setTab] = useState<"rondas" | "ocorrencias">("rondas");
+  const [patrols, setPatrols] = useState<MobileHistoryPatrol[]>([]);
+  const [incidents, setIncidents] = useState<MobileHistoryIncident[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  async function loadHistory() {
+    setLoading(true);
+    try {
+      const data = await apiJson<{ patrols: MobileHistoryPatrol[]; incidents: MobileHistoryIncident[] }>("/api/mobile/history");
+      setPatrols(data.patrols);
+      setIncidents(data.incidents);
+    } catch (err) {
+      show({ title: "Historico indisponivel", text: err instanceof Error ? err.message : "Tente novamente.", tone: "error" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadHistory();
+  }, []);
+
+  const openIncidents = incidents.filter((incident) => incident.status !== "Resolvida").length;
+  const completedPatrols = patrols.filter((patrol) => patrol.status === "Finalizada").length;
+
+  return (
+    <MobileShell title="Historico">
+      <ToastView toast={toast} />
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Card><CardContent><p className="text-xs font-bold uppercase text-slate-500">Rondas feitas</p><p className="mt-1 text-3xl font-black">{completedPatrols}</p></CardContent></Card>
+          <Card><CardContent><p className="text-xs font-bold uppercase text-slate-500">Ocorrencias abertas</p><p className="mt-1 text-3xl font-black">{openIncidents}</p></CardContent></Card>
+        </div>
+        <div className="grid grid-cols-2 rounded-lg bg-slate-200 p-1">
+          <button type="button" onClick={() => setTab("rondas")} className={cn("rounded-md py-2 text-sm font-black", tab === "rondas" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500")}>Rondas</button>
+          <button type="button" onClick={() => setTab("ocorrencias")} className={cn("rounded-md py-2 text-sm font-black", tab === "ocorrencias" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500")}>Ocorrencias</button>
+        </div>
+        {loading && <Card><CardContent className="flex items-center gap-2 text-sm font-semibold text-slate-500"><Loader2 className="animate-spin" size={16} />Carregando historico...</CardContent></Card>}
+        {!loading && tab === "rondas" && (
+          <div className="space-y-3">
+            {patrols.map((patrol) => (
+              <Card key={patrol.id}>
+                <CardContent>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-black">{patrol.name}</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-500">{patrol.condominiumName ?? "Condominio"}</p>
+                    </div>
+                    <StatusBadge status={patrol.status} />
+                  </div>
+                  <div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
+                    <div className="rounded-lg bg-slate-50 p-2"><p className="font-black">{patrol.completedCheckpoints}/{patrol.totalCheckpoints}</p><p className="text-xs text-slate-500">pontos</p></div>
+                    <div className="rounded-lg bg-slate-50 p-2"><p className="font-black">{patrol.incidentsCount}</p><p className="text-xs text-slate-500">ocorr.</p></div>
+                    <div className="rounded-lg bg-slate-50 p-2"><p className="font-black">{formatDateTime(patrol.finishedAt || patrol.startedAt || patrol.createdAt, "time")}</p><p className="text-xs text-slate-500">{formatDateTime(patrol.createdAt, "date")}</p></div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+            {!patrols.length && <EmptyState text="Nenhuma ronda registrada para seu usuario." />}
+          </div>
+        )}
+        {!loading && tab === "ocorrencias" && (
+          <div className="space-y-3">
+            {incidents.map((incident) => (
+              <Card key={incident.id}>
+                <CardContent>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-black">{incident.type}</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-500">{incident.location ?? "Local nao informado"}</p>
+                    </div>
+                    <StatusBadge status={incident.status} />
+                  </div>
+                  <p className="mt-3 line-clamp-2 text-sm text-slate-600">{incident.description}</p>
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-slate-500">
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1">{incident.priority}</span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1">{formatDateTime(incident.createdAt)}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+            {!incidents.length && <EmptyState text="Nenhuma ocorrencia registrada para seu usuario." />}
+          </div>
+        )}
+        <Button variant="outline" className="w-full" onClick={loadHistory} disabled={loading}>
+          {loading ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
+          Atualizar historico
+        </Button>
       </div>
     </MobileShell>
   );
