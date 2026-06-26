@@ -184,21 +184,56 @@ export function LoginPage() {
   const { toast, show } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  async function enter() {
+  useEffect(() => {
+    const savedEmail = localStorage.getItem("ronda-smart-login-email");
+    const savedRemember = localStorage.getItem("ronda-smart-remember-login");
+    if (savedEmail) setEmail(savedEmail);
+    if (savedRemember === "false") setRemember(false);
+    apiJson<{ user: { role: string } | null }>("/api/auth/me")
+      .then((data) => {
+        if (data.user) router.replace(data.user.role === "GUARD" ? "/mobile/home" : data.user.role === "SUPER_ADMIN" ? "/master/clientes" : "/admin/dashboard");
+      })
+      .catch(() => undefined);
+  }, [router]);
+
+  async function storeBrowserCredential() {
+    if (!remember || !email || !password) return;
+    try {
+      const credentialApi = navigator.credentials as any;
+      const PasswordCredentialCtor = (window as any).PasswordCredential;
+      if (credentialApi?.store && PasswordCredentialCtor) {
+        await credentialApi.store(new PasswordCredentialCtor({ id: email, name: email, password }));
+      }
+    } catch {
+      // O navegador pode nao suportar Credential Management API; autocomplete ainda funciona.
+    }
+  }
+
+  async function enter(event?: React.FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     setLoading(true);
     setError("");
     try {
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password, remember })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Falha ao entrar.");
-      router.push(data.user.role === "GUARD" ? "/mobile/home" : data.user.role === "SUPER_ADMIN" ? "/master/clientes" : "/admin/dashboard");
+      if (remember) {
+        localStorage.setItem("ronda-smart-login-email", email);
+        localStorage.setItem("ronda-smart-remember-login", "true");
+      } else {
+        localStorage.removeItem("ronda-smart-login-email");
+        localStorage.setItem("ronda-smart-remember-login", "false");
+      }
+      await storeBrowserCredential();
+      router.replace(data.user.role === "GUARD" ? "/mobile/home" : data.user.role === "SUPER_ADMIN" ? "/master/clientes" : "/admin/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao entrar.");
     } finally {
@@ -216,19 +251,23 @@ export function LoginPage() {
               <h1 className="text-3xl font-black tracking-tight md:text-4xl">Seguranca monitorada em tempo real.</h1>
               <p className="mt-3 text-slate-500">Painel web, aplicativo PWA e monitoramento operacional em tempo real.</p>
             </div>
-            <div className="space-y-3">
-              <Input value={email} onChange={(event) => setEmail(event.target.value)} aria-label="E-mail" autoComplete="email" />
-              <Input value={password} onChange={(event) => setPassword(event.target.value)} type="password" aria-label="Senha" autoComplete="current-password" />
-              <Button className="w-full" size="lg" onClick={enter}>
+            <form className="space-y-3" onSubmit={enter}>
+              <Input id="email" name="username" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="E-mail" aria-label="E-mail" type="email" autoComplete="username" inputMode="email" />
+              <Input id="password" name="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Senha" type="password" aria-label="Senha" autoComplete="current-password" />
+              <label className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600">
+                <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} className="h-4 w-4 accent-blue-600" />
+                Manter conectado neste aparelho
+              </label>
+              <Button className="w-full" size="lg" type="submit" disabled={loading}>
                 {loading ? <Loader2 className="animate-spin" size={18} /> : <Shield size={18} />}
                 Entrar
               </Button>
               {error && <p className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-600">{error}</p>}
-              <Button className="w-full" variant="outline" onClick={() => show({ title: "Instalacao pronta", text: "Use o menu do navegador para adicionar a Tela Inicial." })}>
+              <Button className="w-full" variant="outline" type="button" onClick={() => show({ title: "Instalacao pronta", text: "Use o menu do navegador para adicionar a Tela Inicial." })}>
                 <Smartphone size={18} />
                 Instalar App
               </Button>
-            </div>
+            </form>
             <div className="flex justify-between gap-4 text-sm font-medium text-blue-600">
               <button type="button" onClick={() => show({ title: "Recuperacao de acesso", text: "Solicite a redefinicao ao administrador da sua empresa." })}>Esqueci minha senha</button>
               <button type="button" onClick={() => show({ title: "Solicitacao de acesso", text: "Peça ao administrador da sua empresa para criar seu usuario." })}>Solicitar acesso</button>

@@ -3,7 +3,8 @@ import { createHash, pbkdf2Sync, randomBytes, timingSafeEqual } from "node:crypt
 import { query, rowToCamel } from "@/lib/db";
 
 const COOKIE_NAME = "ronda_session";
-const SESSION_DAYS = 7;
+const DEFAULT_SESSION_DAYS = 30;
+const REMEMBER_SESSION_DAYS = 180;
 
 function shouldUseSecureCookie() {
   if (process.env.COOKIE_SECURE) return process.env.COOKIE_SECURE === "true";
@@ -40,9 +41,10 @@ function tokenHash(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export async function createSession(userId: string) {
+export async function createSession(userId: string, remember = true) {
   const token = randomBytes(32).toString("hex");
-  const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
+  const days = remember ? REMEMBER_SESSION_DAYS : DEFAULT_SESSION_DAYS;
+  const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   await query(
     `INSERT INTO sessions (user_id, token_hash, expires_at)
      VALUES ($1, $2, $3)`,
@@ -55,7 +57,8 @@ export async function createSession(userId: string) {
     sameSite: "lax",
     secure: shouldUseSecureCookie(),
     path: "/",
-    expires: expiresAt
+    expires: expiresAt,
+    maxAge: days * 24 * 60 * 60
   });
 }
 

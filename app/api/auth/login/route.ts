@@ -5,6 +5,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const email = String(body?.email ?? "").trim().toLowerCase();
   const password = String(body?.password ?? "");
+  const remember = body?.remember !== false;
 
   if (!email || !password) {
     return Response.json({ error: "Informe e-mail e senha." }, { status: 400 });
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Credenciais invalidas." }, { status: 401 });
   }
 
-  await createSession(user.id);
+  await createSession(user.id, remember);
   const safeUser = rowToCamel({
     id: user.id,
     name: user.name,
