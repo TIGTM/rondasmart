@@ -1319,12 +1319,16 @@ export function MobileRonda() {
   );
 }
 
-function useCamera() {
+function useCamera(autoStart = false) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [cameraState, setCameraState] = useState<"idle" | "loading" | "on" | "fallback">("idle");
+  const startingRef = useRef(false);
+  const cameraStateRef = useRef<"idle" | "loading" | "on" | "fallback">(autoStart ? "loading" : "idle");
+  const [cameraState, setCameraState] = useState<"idle" | "loading" | "on" | "fallback">(autoStart ? "loading" : "idle");
   const [cameraError, setCameraError] = useState("");
 
   async function startCamera() {
+    if (startingRef.current) return;
+    startingRef.current = true;
     stopCamera();
     setCameraState("loading");
     setCameraError("");
@@ -1347,6 +1351,8 @@ function useCamera() {
     } catch (err) {
       setCameraError(err instanceof Error ? err.message : "Nao foi possivel abrir a camera neste navegador.");
       setCameraState("fallback");
+    } finally {
+      startingRef.current = false;
     }
   }
 
@@ -1355,6 +1361,30 @@ function useCamera() {
     stream?.getTracks().forEach((track) => track.stop());
   }
 
+  useEffect(() => {
+    cameraStateRef.current = cameraState;
+  }, [cameraState]);
+
+  useEffect(() => {
+    if (!autoStart) return;
+    let cancelled = false;
+    const open = () => {
+      if (!cancelled && cameraStateRef.current !== "on") void startCamera();
+    };
+    const timer = window.setTimeout(open, 120);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") open();
+    };
+    window.addEventListener("focus", open);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", open);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [autoStart]);
+
   useEffect(() => stopCamera, []);
   return { videoRef, cameraState, cameraError, startCamera, stopCamera };
 }
@@ -1362,7 +1392,7 @@ function useCamera() {
 export function MobileScanner() {
   const { toast, show } = useToast();
   const router = useRouter();
-  const { videoRef, cameraState, cameraError, startCamera } = useCamera();
+  const { videoRef, cameraState, cameraError, startCamera } = useCamera(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scannerCanvasRef = useRef<HTMLCanvasElement>(null);
   const scanningRef = useRef(false);
@@ -1374,7 +1404,6 @@ export function MobileScanner() {
 
   useEffect(() => {
     setPendingPhoto(Boolean(sessionStorage.getItem(PENDING_PHOTO_KEY)));
-    window.setTimeout(() => { void startCamera(); }, 250);
   }, []);
 
   async function validateQr(nextToken = qrToken) {
@@ -1559,13 +1588,9 @@ export function MobileFoto() {
   const [photo, setPhoto] = useState<string | null>(null);
   const { toast, show } = useToast();
   const router = useRouter();
-  const { videoRef, cameraState, cameraError, startCamera, stopCamera } = useCamera();
+  const { videoRef, cameraState, cameraError, startCamera, stopCamera } = useCamera(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    window.setTimeout(() => { void startCamera(); }, 250);
-  }, []);
 
   function setCompressedPhotoFromCanvas(canvas: HTMLCanvasElement) {
     const maximum = 1280;
